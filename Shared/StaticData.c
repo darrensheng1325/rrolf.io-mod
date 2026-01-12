@@ -77,9 +77,9 @@ struct rr_petal_data RR_PETAL_DATA[rr_petal_id_max] = {
 };    
 
 char const *RR_PETAL_NAMES[rr_petal_id_max] = {
-    "Secret", "Petal", "Pellet", "Fossil",   "Stinger",  "Berries", "Shell",
-    "Peas",   "Leaf",  "Egg",    "Magnet", "Uranium", "Feather", "Azalea",
-    "Bone",   "Web",   "Seed",   "Gravel", "Club", "Crest", "Droplet",
+    "Secret", "Basic", "Light", "Rock",   "Stinger",  "Faster", "Shell",
+    "Peas",   "Leaf",  "Egg",    "Magnet", "Uranium", "Powder", "Rose",
+    "Bone",   "Web",   "Seed",   "Pollen", "Club", "Crest", "Droplet",
     "Beak", "Lightning", "Third Eye", "Mandible", "Wax", "Sand", "Mint"};
     
 char const *RR_PETAL_DESCRIPTIONS[rr_petal_id_max] = {
@@ -169,7 +169,7 @@ double RR_HELL_CREEK_MOB_ID_RARITY_COEFFICIENTS[rr_mob_id_max] = {
     40,  //ornith
     25,  //anky
     0.5, //meteor
-    75,  //quetz
+    0,  //quetz
     25   //edmo
 };
 double RR_GARDEN_MOB_ID_RARITY_COEFFICIENTS[rr_mob_id_max] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 1, 5, 10, 0.05, 10};

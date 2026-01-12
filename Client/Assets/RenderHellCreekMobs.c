@@ -356,7 +356,6 @@ void rr_renderer_draw_hell_creek_mob(struct rr_renderer *renderer, uint8_t mob_i
     case rr_mob_id_ankylosaurus: // Beetle
         rr_renderer_scale(renderer, radius / 35.0f);
         SET_BASE_COLOR(0xff905db0, flags, attr_color);
-        rr_renderer_begin_path(renderer);
         rr_renderer_set_fill(renderer, 0xff333333);
         rr_renderer_set_stroke(renderer, 0xff333333);
         rr_renderer_set_line_width(renderer, 7);
@@ -365,6 +364,7 @@ void rr_renderer_draw_hell_creek_mob(struct rr_renderer *renderer, uint8_t mob_i
         rr_renderer_translate(renderer, 35, 0);
         rr_renderer_context_state_init(renderer, &state);
         rr_renderer_rotate(renderer, -0.1f * animation_value);
+        rr_renderer_begin_path(renderer);
         rr_renderer_move_to(renderer, -10, 15);
         rr_renderer_quadratic_curve_to(renderer, 15, 30, 35, 15);
         rr_renderer_quadratic_curve_to(renderer, 15, 20, -10, 5);
@@ -374,6 +374,7 @@ void rr_renderer_draw_hell_creek_mob(struct rr_renderer *renderer, uint8_t mob_i
         rr_renderer_context_state_free(renderer, &state);
         rr_renderer_context_state_init(renderer, &state);
         rr_renderer_rotate(renderer, 0.1f * animation_value);
+        rr_renderer_begin_path(renderer);
         rr_renderer_move_to(renderer, -10, -15);
         rr_renderer_quadratic_curve_to(renderer, 15, -30, 35, -15);
         rr_renderer_quadratic_curve_to(renderer, 15, -20, -10, -5);
@@ -410,18 +411,23 @@ void rr_renderer_draw_hell_creek_mob(struct rr_renderer *renderer, uint8_t mob_i
         rr_renderer_set_line_width(renderer, 7);
         rr_renderer_stroke(renderer);
         rr_renderer_set_fill(renderer, hsv_to_rgb(base_color, 0.8f));
+        // Draw dots as separate paths
         rr_renderer_begin_path(renderer);
-        rr_renderer_move_to(renderer, -17, -12);
         rr_renderer_arc(renderer, -17, -12, 5);
-        rr_renderer_move_to(renderer, -17, -2);
+        rr_renderer_fill(renderer);
+        rr_renderer_begin_path(renderer);
         rr_renderer_arc(renderer, -17, 12, 5);
-        rr_renderer_move_to(renderer, 0, -15);
+        rr_renderer_fill(renderer);
+        rr_renderer_begin_path(renderer);
         rr_renderer_arc(renderer, 0, -15, 5);
-        rr_renderer_move_to(renderer, 0, 15);
+        rr_renderer_fill(renderer);
+        rr_renderer_begin_path(renderer);
         rr_renderer_arc(renderer, 0, 15, 5);
-        rr_renderer_move_to(renderer, 17, -12);
+        rr_renderer_fill(renderer);
+        rr_renderer_begin_path(renderer);
         rr_renderer_arc(renderer, 17, -12, 5);
-        rr_renderer_move_to(renderer, 17, 12);
+        rr_renderer_fill(renderer);
+        rr_renderer_begin_path(renderer);
         rr_renderer_arc(renderer, 17, 12, 5);
         rr_renderer_fill(renderer);
         break;
@@ -472,20 +478,21 @@ void rr_renderer_draw_hell_creek_mob(struct rr_renderer *renderer, uint8_t mob_i
     {
         SET_BASE_COLOR(0xff32a852, flags, attr_color);
         uint32_t vertices = (uint32_t)(radius / 10.0f + 5);
-        rr_renderer_context_state_init(renderer, &state);
         rr_renderer_set_fill(renderer, 0xff222222);
-        rr_renderer_begin_path(renderer);
+        // Draw spikes as separate paths
         for (uint32_t i = 0; i < vertices; ++i)
         {
             float angle = 2.0f * M_PI * i / vertices;
+            rr_renderer_context_state_init(renderer, &state);
+            rr_renderer_rotate(renderer, angle);
+            rr_renderer_begin_path(renderer);
             rr_renderer_move_to(renderer, 10 + radius, 0);
             rr_renderer_line_to(renderer, 0.5f + radius, 3);
             rr_renderer_line_to(renderer, 0.5f + radius, -3);
             rr_renderer_line_to(renderer, 10 + radius, 0);
-            rr_renderer_rotate(renderer, M_PI * 2.0f / vertices);
+            rr_renderer_fill(renderer);
+            rr_renderer_context_state_free(renderer, &state);
         }
-        rr_renderer_fill(renderer);
-        rr_renderer_context_state_free(renderer, &state);
         rr_renderer_set_fill(renderer, base_color);
         rr_renderer_set_stroke(renderer, hsv_to_rgb(base_color, 0.8f));
         rr_renderer_set_line_width(renderer, 5);
@@ -519,7 +526,9 @@ void rr_renderer_draw_hell_creek_mob(struct rr_renderer *renderer, uint8_t mob_i
         rr_renderer_set_line_join(renderer, 1);
         rr_renderer_begin_path(renderer);
         float deflection = radius * 0.1f;
-        rr_renderer_move_to(renderer, radius + seed_binext(&gen) * deflection, seed_binext(&gen) * deflection);
+        float start_x = radius + seed_binext(&gen) * deflection;
+        float start_y = seed_binext(&gen) * deflection;
+        rr_renderer_move_to(renderer, start_x, start_y);
         uint32_t sides = 4 + (uint32_t)(radius / 10.0f);
         for (uint32_t i = 1; i < sides; ++i)
         {
@@ -529,7 +538,7 @@ void rr_renderer_draw_hell_creek_mob(struct rr_renderer *renderer, uint8_t mob_i
                 sinf(angle) * radius + seed_binext(&gen) * deflection);
         }
         // Close path by returning to start
-        rr_renderer_line_to(renderer, radius + seed_binext(&gen) * deflection, seed_binext(&gen) * deflection);
+        rr_renderer_line_to(renderer, start_x, start_y);
         rr_renderer_fill(renderer);
         rr_renderer_stroke(renderer);
         break;

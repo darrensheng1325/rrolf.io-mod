@@ -61,7 +61,7 @@ uint8_t fern_zone() { return rr_mob_id_fern; }
 uint8_t edmon_tree_zone() { return rr_mob_id_edmontosaurus; }
 uint8_t quetz_trex_zone()
 {
-    return rr_frand() > 0.5 ? rr_mob_id_quetzalcoatlus : rr_mob_id_trex;
+    return rr_mob_id_trex;
 }
 uint8_t trike_dako_zone()
 {
