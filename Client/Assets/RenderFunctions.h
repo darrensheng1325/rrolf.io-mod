@@ -26,6 +26,7 @@ void rr_renderer_draw_petal_with_name(struct rr_renderer *, uint8_t, uint8_t);
 void rr_renderer_draw_background(struct rr_renderer *, uint8_t, uint8_t);
 
 void rr_renderer_draw_mob(struct rr_renderer *, uint8_t, float, float, uint8_t);
+void rr_renderer_draw_hell_creek_mob(struct rr_renderer *, uint8_t, float, float, uint8_t);
 
 void rr_renderer_draw_petal_name(struct rr_renderer *, uint8_t, float, int8_t,
                                  int8_t);

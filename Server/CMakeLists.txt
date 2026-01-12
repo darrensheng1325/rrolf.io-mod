@@ -13,12 +13,16 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-set(CMAKE_SYSTEM_NAME Generic)
-
 cmake_minimum_required(VERSION 3.16)
 
 project(rrolf-server)
 include_directories(..)
+
+# Find libwebsockets, OpenSSL, and other dependencies
+find_package(PkgConfig REQUIRED)
+set(OPENSSL_ROOT_DIR /opt/homebrew/opt/openssl@3)
+find_package(OpenSSL REQUIRED)
+pkg_check_modules(LIBWEBSOCKETS REQUIRED libwebsockets)
 
 set(SRCS
     MobAi/Aggressive.c
@@ -102,8 +106,11 @@ add_executable(rrolf-server ${SRCS})
 if (WINDOWS)
     target_link_directories(rrolf-server PRIVATE /c/libwebsockets/unix-build/bin)
     target_link_libraries(rrolf-server ws2_32 wsock32)
+else()
+    target_include_directories(rrolf-server PRIVATE ${LIBWEBSOCKETS_INCLUDE_DIRS})
+    target_link_directories(rrolf-server PRIVATE ${LIBWEBSOCKETS_LIBRARY_DIRS})
+    target_link_libraries(rrolf-server pthread ${LIBWEBSOCKETS_LIBRARIES} OpenSSL::SSL OpenSSL::Crypto m)
 endif()
-target_link_libraries(rrolf-server pthread websockets m)
 
 if (NUSE_CURL)
 else()

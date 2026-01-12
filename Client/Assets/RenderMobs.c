@@ -22,6 +22,9 @@
 #include <Client/Renderer/Renderer.h>
 #include <Shared/StaticData.h>
 
+// Forward declaration for hell creek mob rendering
+void rr_renderer_draw_hell_creek_mob(struct rr_renderer *, uint8_t, float, float, uint8_t);
+
 // head, body, legs, tail, IN THAT ORDER
 
 struct rr_renderer_spritesheet mob_sprites[rr_mob_id_max];
@@ -66,126 +69,23 @@ void rr_renderer_draw_mob(struct rr_renderer *renderer, uint8_t id,
     */
     switch (id)
     {
+    // Hell Creek mobs - use new rendering
     case rr_mob_id_pachycephalosaurus:
-        rr_renderer_scale(renderer, 0.75);
     case rr_mob_id_triceratops:
     case rr_mob_id_trex:
-    case rr_mob_id_edmontosaurus:
-        rr_renderer_scale(renderer, 0.2f);
-
-        rr_renderer_context_state_init(renderer, &state);
-        rr_renderer_translate(renderer, animation_tick * 10.0f, 0);
-        render_sprite(renderer, id, 2, flags);
-        rr_renderer_context_state_free(renderer, &state);
-
-        rr_renderer_context_state_init(renderer, &state);
-        rr_renderer_translate(renderer, animation_tick * -10.0f, 0);
-        render_sprite(renderer, id, 3, flags);
-        rr_renderer_context_state_free(renderer, &state);
-
-        rr_renderer_context_state_init(renderer, &state);
-        rr_renderer_translate(renderer, -75, 0);
-        rr_renderer_rotate(renderer, turning_value);
-        rr_renderer_translate(renderer, -80, 0);
-        render_sprite(renderer, id, 4, flags);
-        rr_renderer_context_state_free(renderer, &state);
-
-        render_sprite(renderer, id, 1, flags);
-
-        rr_renderer_context_state_init(renderer, &state);
-        rr_renderer_translate(renderer, 145, 0);
-        render_sprite(renderer, id, 0, flags);
-        rr_renderer_context_state_free(renderer, &state);
-        break;
     case rr_mob_id_fern:
-        rr_renderer_scale(renderer, 0.3f);
     case rr_mob_id_tree:
-    case rr_mob_id_meteor:
-    case rr_mob_id_beehive:
-        rr_renderer_scale(renderer, 0.4f);
-        render_sprite(renderer, id, 0, flags);
-        break;
     case rr_mob_id_pteranodon:
-        rr_renderer_scale(renderer, 0.15f);
-
-        rr_renderer_context_state_init(renderer, &state);
-        rr_renderer_rotate(renderer, animation_tick * 0.1f);
-        rr_renderer_translate(renderer, 0, 160);
-        render_sprite(renderer, id, 1, flags);
-        rr_renderer_context_state_free(renderer, &state);
-
-        rr_renderer_context_state_init(renderer, &state);
-        rr_renderer_rotate(renderer, animation_tick * -0.1f);
-        rr_renderer_translate(renderer, 0, -160);
-        render_sprite(renderer, id, 2, flags);
-        rr_renderer_context_state_free(renderer, &state);
-        render_sprite(renderer, id, 0, flags);
-        break;
     case rr_mob_id_dakotaraptor:
     case rr_mob_id_ornithomimus:
-        rr_renderer_scale(renderer, 0.16f);
-
-        rr_renderer_context_state_init(renderer, &state);
-        rr_renderer_translate(renderer, 0, -65);
-        rr_renderer_rotate(renderer, animation_tick * 0.1f);
-        render_sprite(renderer, id, 2, flags);
-        rr_renderer_context_state_free(renderer, &state);
-
-        rr_renderer_context_state_init(renderer, &state);
-        rr_renderer_translate(renderer, 0, 65);
-        rr_renderer_rotate(renderer, animation_tick * -0.1f);
-        render_sprite(renderer, id, 3, flags);
-        rr_renderer_context_state_free(renderer, &state);
-
-        rr_renderer_context_state_init(renderer, &state);
-        rr_renderer_translate(renderer, -120, 0);
-        rr_renderer_rotate(renderer, turning_value);
-        rr_renderer_translate(renderer, -75, 0);
-        render_sprite(renderer, id, 4, flags);
-        rr_renderer_context_state_free(renderer, &state);
-
-        render_sprite(renderer, id, 1, flags);
-
-        rr_renderer_context_state_init(renderer, &state);
-        rr_renderer_translate(renderer,
-                              id == rr_mob_id_ornithomimus ? 175 : 125, 0);
-
-        render_sprite(renderer, id, 0, flags);
-        rr_renderer_context_state_free(renderer, &state);
-        break;
     case rr_mob_id_ankylosaurus:
-        rr_renderer_scale(renderer, 0.2f);
-
-        rr_renderer_context_state_init(renderer, &state);
-        rr_renderer_translate(renderer, -155, 0);
-        rr_renderer_rotate(renderer, turning_value);
-        render_sprite(renderer, id, 2, flags);
-        rr_renderer_context_state_free(renderer, &state);
-
-        render_sprite(renderer, id, 1, flags);
-
-        rr_renderer_context_state_init(renderer, &state);
-        rr_renderer_translate(renderer, 145, 0);
-        render_sprite(renderer, id, 0, flags);
-        rr_renderer_context_state_free(renderer, &state);
-        break;
+    case rr_mob_id_meteor:
     case rr_mob_id_quetzalcoatlus:
-        rr_renderer_scale(renderer, 0.2f);
-
-        rr_renderer_context_state_init(renderer, &state);
-        rr_renderer_rotate(renderer, animation_tick * 0.1f);
-        rr_renderer_translate(renderer, -75, 125);
-        render_sprite(renderer, id, 2, flags);
-        rr_renderer_context_state_free(renderer, &state);
-
-        rr_renderer_context_state_init(renderer, &state);
-        rr_renderer_rotate(renderer, animation_tick * -0.1f);
-        rr_renderer_translate(renderer, -75, -125);
-        render_sprite(renderer, id, 3, flags);
-        rr_renderer_context_state_free(renderer, &state);
-        render_sprite(renderer, id, 1, flags);
-
-        rr_renderer_translate(renderer, 165, 0);
+    case rr_mob_id_edmontosaurus:
+        rr_renderer_draw_hell_creek_mob(renderer, id, raw_animation_tick, turning_value, flags);
+        break;
+    case rr_mob_id_beehive:
+        rr_renderer_scale(renderer, 0.4f);
         render_sprite(renderer, id, 0, flags);
         break;
     case rr_mob_id_ant:

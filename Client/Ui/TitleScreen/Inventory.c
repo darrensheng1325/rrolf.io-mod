@@ -155,7 +155,7 @@ struct rr_ui_element *rr_ui_inventory_container_init()
                                   rr_ui_scroll_container_init(this, 400), NULL),
                               -1, 1),
             10),
-        0x40ffffff);
+        0xff5a9fdb);
     c->x += 60 + 10;
     c->animate = inventory_container_animate;
     c->should_show = inventory_container_should_show;
@@ -279,7 +279,7 @@ void inventory_toggle_button_on_event(struct rr_ui_element *this,
 struct rr_ui_element *rr_ui_inventory_toggle_button_init()
 {
     struct rr_ui_element *this = rr_ui_element_init();
-    rr_ui_set_background(this, 0x80888888);
+    rr_ui_set_background(this, 0xff5a9fdb);
     this->abs_width = this->abs_height = this->width = this->height = 60;
     this->on_event = inventory_toggle_button_on_event;
     this->on_render = inventory_toggle_on_render;

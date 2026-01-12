@@ -65,7 +65,7 @@ uint8_t quetz_trex_zone()
 }
 uint8_t trike_dako_zone()
 {
-    return rr_frand() > 0.2 ? rr_mob_id_dakotaraptor : rr_mob_id_triceratops;
+    return rr_mob_id_dakotaraptor; // triceratops disabled
 }
 uint8_t pter_zone()
 {

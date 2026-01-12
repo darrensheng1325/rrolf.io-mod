@@ -140,17 +140,41 @@ static void summon_edmonto(struct rr_ui_element *this, struct rr_game *game)
     struct proto_bug encoder;
     proto_bug_init(&encoder, RR_OUTGOING_PACKET);
     proto_bug_write_uint8(&encoder, rr_serverbound_dev_summon, "header");
-    proto_bug_write_uint8(&encoder, rand() % rr_mob_id_ant, "id");
+    proto_bug_write_uint8(&encoder, rand() % rr_mob_id_max, "id");
     proto_bug_write_uint8(&encoder, rr_rarity_id_ultimate, "rarity");
+
+    rr_websocket_send(&game->socket, encoder.current - encoder.start);
+}
+
+static void summon_unique(struct rr_ui_element *this, struct rr_game *game)
+{
+    if (!(game->input_data->mouse_buttons_up_this_tick & 1))
+        return;
+    puts("unique summon");
+    struct proto_bug encoder;
+    proto_bug_init(&encoder, RR_OUTGOING_PACKET);
+    proto_bug_write_uint8(&encoder, rr_serverbound_dev_summon, "header");
+    proto_bug_write_uint8(&encoder, rand() % rr_mob_id_max, "id");
+    proto_bug_write_uint8(&encoder, rr_rarity_id_unique, "rarity");
 
     rr_websocket_send(&game->socket, encoder.current - encoder.start);
 }
 
 static struct rr_ui_element *summon_mob_button_init()
 {
-    struct rr_ui_element *element = rr_ui_labeled_button_init("Summon", 20, 0);
-    element->fill = 0x80ffffff;
+    struct rr_ui_element *element = rr_ui_labeled_button_init("Summon Super", 20, 0);
+    element->fill = RR_RARITY_COLORS[7];
     element->on_event = summon_edmonto;
+    element->animate = rr_ui_default_animate;
+
+    return element;
+}
+
+static struct rr_ui_element *summon_unique_mob_button_init()
+{
+    struct rr_ui_element *element = rr_ui_labeled_button_init("Summon Unique", 20, 0);
+    element->fill = RR_RARITY_COLORS[8];
+    element->on_event = summon_unique;
     element->animate = rr_ui_default_animate;
 
     return element;
@@ -168,7 +192,7 @@ static struct rr_ui_element *speed_slider_init(struct rr_game *game)
 struct rr_ui_element *rr_ui_dev_panel_container_init(struct rr_game *game)
 {
     struct rr_ui_element *inner = rr_ui_v_container_init(
-        rr_ui_container_init(), 10, 10, summon_mob_button_init(),
+        rr_ui_container_init(), 10, 10, summon_mob_button_init(), summon_unique_mob_button_init(),
         rr_ui_set_justify(
             rr_ui_h_container_init(rr_ui_container_init(), 0, 10,
                                    rr_ui_text_init("Speed:", 20, 0xffffffff),

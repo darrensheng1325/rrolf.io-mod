@@ -93,17 +93,17 @@ void rr_websocket_connect_to(struct rr_websocket *this, char const *link)
                 socket.binaryType = "arraybuffer";
                 socket.onopen = function()
                 {
-                    _rr_on_socket_event_emscripten($0, 0, 0, 0);
+                    _rr_on_socket_event_emscripten($0, 0, 0, 0n);
                 };
                 socket.onclose = function(a)
                 {
-                    _rr_on_socket_event_emscripten($0, 1, 0, a.code);
+                    _rr_on_socket_event_emscripten($0, 1, 0, BigInt(a.code));
                 };
                 socket.onmessage = function(event)
                 {
                     HEAPU8.set(new Uint8Array(event.data), $2);
                     _rr_on_socket_event_emscripten(
-                        $0, 2, $2, new Uint8Array(event.data).length);
+                        $0, 2, $2, BigInt(new Uint8Array(event.data).length));
                 };
             })();
         },

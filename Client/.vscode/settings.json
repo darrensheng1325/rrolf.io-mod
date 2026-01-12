@@ -42,5 +42,5 @@
         "pb.h": "c"
     },
     "C_Cpp.errorSquiggles": "enabled",
-    "cmake.sourceDirectory": "C:/rrolf/Client"
+    "cmake.sourceDirectory": "/Users/darren/rrolf2/rrolf/Client"
 }

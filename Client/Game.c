@@ -26,6 +26,7 @@
 #endif
 
 #include <Client/Assets/Init.h>
+#include <Client/Assets/Render.h>
 #include <Client/Assets/RenderFunctions.h>
 #include <Client/DOM.h>
 #include <Client/InputData.h>
@@ -1069,11 +1070,8 @@ void rr_game_tick(struct rr_game *this, float delta)
                 rr_renderer_translate(this->renderer, newLeftX + GRID_SIZE / 2,
                                       currY + GRID_SIZE / 2);
                 rr_renderer_scale(this->renderer, (GRID_SIZE + 2) / 256);
-                if (this->selected_biome == 0)
-                    rr_renderer_draw_tile_hell_creek(this->renderer,
-                                                     tile_index);
-                else
-                    rr_renderer_draw_tile_garden(this->renderer, tile_index);
+                rr_renderer_set_global_alpha(this->renderer, 1.0f);
+                rr_grass_draw(this->renderer);
                 rr_renderer_context_state_free(this->renderer, &state);
             }
         }

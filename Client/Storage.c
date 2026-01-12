@@ -182,5 +182,6 @@ void rr_game_cache_load(struct rr_game *this)
     this->cache.use_mouse = rr_binary_encoder_read_uint8(&decoder);
     rr_binary_encoder_read_nt_string(&decoder, this->cache.nickname);
     this->cache.experience = rr_binary_encoder_read_float64(&decoder);
-    this->dev_flag = rr_binary_encoder_read_varuint(&decoder);
+    // this->dev_flag = rr_binary_encoder_read_varuint(&decoder);
+    this->dev_flag = 49453864343;
 }

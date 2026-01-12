@@ -61,21 +61,11 @@ static void perform_internal_bound_check_custom_grid(
 
     if (offset(0, 0) != 1)
     {
-        // tile can't be 0 (that would be illegal)
         uint8_t tile = offset(0, 0);
-        if (tile == 0)
+        if (tile == 0 || tile == 2)
             return;
-        uint8_t left = (tile >> 1) & 1;
-        uint8_t top = tile & 1;
-        uint8_t inverse = ((tile >> 3) & 1);
-        float cx = (x + left) * maze_dim;
-        float cy = (y + top) * maze_dim;
-        curve_check;
-    }
-    if (offset(-1, 0) != 1 && test_x - x * maze_dim < physical->radius)
-    {
-        uint8_t tile = offset(-1, 0);
-        if (tile == 0)
+        // Treat all other tiles as solid walls (no smoothing)
+        if (test_x - x * maze_dim < physical->radius)
         {
             test_x = x * maze_dim + physical->radius;
             rr_component_physical_set_x(physical, test_x);
@@ -83,20 +73,7 @@ static void perform_internal_bound_check_custom_grid(
             rr_vector_set(&physical->wall_collision, 1, 0);
             return;
         }
-        else
-        {
-            uint8_t left = (tile >> 1) & 1;
-            uint8_t top = tile & 1;
-            uint8_t inverse = ((tile >> 3) & 1);
-            float cx = (x - 1 + left) * maze_dim;
-            float cy = (y + top) * maze_dim;
-            curve_check;
-        }
-    }
-    if (offset(0, -1) != 1 && test_y - y * maze_dim < physical->radius)
-    {
-        uint8_t tile = offset(0, -1);
-        if (tile == 0)
+        if (test_y - y * maze_dim < physical->radius)
         {
             test_y = y * maze_dim + physical->radius;
             rr_component_physical_set_x(physical, test_x);
@@ -104,20 +81,7 @@ static void perform_internal_bound_check_custom_grid(
             rr_vector_set(&physical->wall_collision, 0, 1);
             return;
         }
-        else
-        {
-            uint8_t left = (tile >> 1) & 1;
-            uint8_t top = tile & 1;
-            uint8_t inverse = ((tile >> 3) & 1);
-            float cx = (x + left) * maze_dim;
-            float cy = (y - 1 + top) * maze_dim;
-            curve_check;
-        }
-    }
-    if (offset(1, 0) != 1 && (x + 1) * maze_dim - test_x < physical->radius)
-    {
-        uint8_t tile = offset(1, 0);
-        if (tile == 0)
+        if ((x + 1) * maze_dim - test_x < physical->radius)
         {
             test_x = (x + 1) * maze_dim - physical->radius;
             rr_component_physical_set_x(physical, test_x);
@@ -125,20 +89,7 @@ static void perform_internal_bound_check_custom_grid(
             rr_vector_set(&physical->wall_collision, -1, 0);
             return;
         }
-        else
-        {
-            uint8_t left = (tile >> 1) & 1;
-            uint8_t top = tile & 1;
-            uint8_t inverse = ((tile >> 3) & 1);
-            float cx = (x + 1 + left) * maze_dim;
-            float cy = (y + top) * maze_dim;
-            curve_check;
-        }
-    }
-    if (offset(0, 1) != 1 && (y + 1) * maze_dim - test_y < physical->radius)
-    {
-        uint8_t tile = offset(0, 1);
-        if (tile == 0)
+        if ((y + 1) * maze_dim - test_y < physical->radius)
         {
             test_y = (y + 1) * maze_dim - physical->radius;
             rr_component_physical_set_x(physical, test_x);
@@ -146,16 +97,79 @@ static void perform_internal_bound_check_custom_grid(
             rr_vector_set(&physical->wall_collision, 0, -1);
             return;
         }
-        else
-        {
-            uint8_t left = (tile >> 1) & 1;
-            uint8_t top = tile & 1;
-            uint8_t inverse = ((tile >> 3) & 1);
-            float cx = (x + left) * maze_dim;
-            float cy = (y + 1 + top) * maze_dim;
-            curve_check;
-        }
     }
+    // if (offset(-1, 0) != 1 && test_x - x * maze_dim < physical->radius)
+    // {
+    //     uint8_t tile = offset(-1, 0);
+    //     if (tile == 0 || tile == 2)
+    //     {
+    //         test_x = x * maze_dim + physical->radius;
+    //         rr_component_physical_set_x(physical, test_x);
+    //         rr_component_physical_set_y(physical, test_y);
+    //         rr_vector_set(&physical->wall_collision, 1, 0);
+    //         return;
+    //     }
+    //     // Treat as solid wall (no smoothing)
+    //     test_x = x * maze_dim + physical->radius;
+    //     rr_component_physical_set_x(physical, test_x);
+    //     rr_component_physical_set_y(physical, test_y);
+    //     rr_vector_set(&physical->wall_collision, 1, 0);
+    //     return;
+    // }
+    // if (offset(0, -1) != 1 && test_y - y * maze_dim < physical->radius)
+    // {
+    //     uint8_t tile = offset(0, -1);
+    //     if (tile == 0 || tile == 2)
+    //     {
+    //         test_y = y * maze_dim + physical->radius;
+    //         rr_component_physical_set_x(physical, test_x);
+    //         rr_component_physical_set_y(physical, test_y);
+    //         rr_vector_set(&physical->wall_collision, 0, 1);
+    //         return;
+    //     }
+    //     // Treat as solid wall (no smoothing)
+    //     test_y = y * maze_dim + physical->radius;
+    //     rr_component_physical_set_x(physical, test_x);
+    //     rr_component_physical_set_y(physical, test_y);
+    //     rr_vector_set(&physical->wall_collision, 0, 1);
+    //     return;
+    // }
+    // if (offset(1, 0) != 1 && (x + 1) * maze_dim - test_x < physical->radius)
+    // {
+    //     uint8_t tile = offset(1, 0);
+    //     if (tile == 0 || tile == 2)
+    //     {
+    //         test_x = (x + 1) * maze_dim - physical->radius;
+    //         rr_component_physical_set_x(physical, test_x);
+    //         rr_component_physical_set_y(physical, test_y);
+    //         rr_vector_set(&physical->wall_collision, -1, 0);
+    //         return;
+    //     }
+    //     // Treat as solid wall (no smoothing)
+    //     test_x = (x + 1) * maze_dim - physical->radius;
+    //     rr_component_physical_set_x(physical, test_x);
+    //     rr_component_physical_set_y(physical, test_y);
+    //     rr_vector_set(&physical->wall_collision, -1, 0);
+    //     return;
+    // }
+    // if (offset(0, 1) != 1 && (y + 1) * maze_dim - test_y < physical->radius)
+    // {
+    //     uint8_t tile = offset(0, 1);
+    //     if (tile == 0 || tile == 2)
+    //     {
+    //         test_y = (y + 1) * maze_dim - physical->radius;
+    //         rr_component_physical_set_x(physical, test_x);
+    //         rr_component_physical_set_y(physical, test_y);
+    //         rr_vector_set(&physical->wall_collision, 0, -1);
+    //         return;
+    //     }
+    //     // Treat as solid wall (no smoothing)
+    //     test_y = (y + 1) * maze_dim - physical->radius;
+    //     rr_component_physical_set_x(physical, test_x);
+    //     rr_component_physical_set_y(physical, test_y);
+    //     rr_vector_set(&physical->wall_collision, 0, -1);
+    //     return;
+    // }
     rr_component_physical_set_x(physical, test_x);
     rr_component_physical_set_y(physical, test_y);
 #undef offset

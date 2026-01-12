@@ -812,7 +812,7 @@ static int handle_lws_event(struct rr_server *this, struct lws *ws,
                 id, rarity, rr_simulation_team_id_mobs);
             struct rr_component_mob *mob =
                 rr_simulation_get_mob(&this->simulation, e);
-            mob->no_drop = 1;
+            mob->no_drop = 0;
             break;
         }
         default:

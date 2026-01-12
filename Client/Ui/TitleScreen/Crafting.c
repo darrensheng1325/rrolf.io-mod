@@ -362,6 +362,9 @@ static void crafting_xp_text_animate(struct rr_ui_element *this,
     case rr_rarity_id_exotic:
         data->text = "25m xp per craft";
         break;
+    case rr_rarity_id_ultimate:
+        data->text = "100m xp per craft";
+        break;
     }
 }
 
@@ -525,7 +528,7 @@ struct rr_ui_element *rr_ui_crafting_container_init()
                     rr_ui_scroll_container_init(this, 300), NULL),
                 -1, 1),
             10),
-        0x40ffffff);
+        0xffdb9d5a);
     c->x += 60 + 10;
     c->animate = crafting_container_animate;
     c->should_show = crafting_container_should_show;
@@ -715,7 +718,7 @@ void crafting_toggle_button_on_event(struct rr_ui_element *this,
 struct rr_ui_element *rr_ui_crafting_toggle_button_init()
 {
     struct rr_ui_element *this = rr_ui_element_init();
-    rr_ui_set_background(this, 0x80888888);
+    rr_ui_set_background(this, 0xffdb9d5a);
     this->abs_width = this->abs_height = this->width = this->height = 60;
     this->on_event = crafting_toggle_button_on_event;
     this->on_render = crafting_toggle_on_render;
