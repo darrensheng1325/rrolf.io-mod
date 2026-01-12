@@ -123,12 +123,11 @@ static uint32_t FLOWER_COLORS[] = {
 };
 
 // Helper macro for SET_BASE_COLOR
+// Note: flags parameter in C++ code was different (flower color flag), 
+// but in C code flags is for cache/friendly/centipede, so we always use set_color
 #define SET_BASE_COLOR(set_color, flags, attr_color) \
     do { \
-        if (!((flags) & 1)) \
-            base_color = (set_color); \
-        else \
-            base_color = FLOWER_COLORS[(attr_color) % (sizeof(FLOWER_COLORS) / sizeof(FLOWER_COLORS[0]))]; \
+        base_color = (set_color); \
     } while(0)
 
 // Main rendering function - matches rr_renderer_draw_mob signature
@@ -136,6 +135,9 @@ void rr_renderer_draw_hell_creek_mob(struct rr_renderer *renderer, uint8_t mob_i
                                       float raw_animation_tick, float turning_value,
                                       uint8_t flags)
 {
+    // Reset any color filters that might have been applied
+    rr_renderer_reset_color_filter(renderer);
+    
     float animation_value = sinf(raw_animation_tick);
     float radius = RR_MOB_RARITY_SCALING[rr_rarity_id_common].radius * 20.0f; // Default radius, will be scaled by caller
     uint32_t seed = (uint32_t)(raw_animation_tick * 1000.0f); // Use animation as seed
