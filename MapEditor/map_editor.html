@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>C++ Array Editor (Find & Replace)</title>
+    <style>
+        :root {
+            --bg-color: #181818;
+            --panel-bg: #252526;
+            --text-color: #cccccc;
+            --accent: #007acc;
+            --border: #3e3e42;
+        }
+
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+            user-select: none;
+        }
+
+        /* Top Control Bar */
+        .toolbar {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            background-color: var(--panel-bg);
+            padding: 8px 15px;
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+            flex-wrap: wrap;
+        }
+
+        h1 { margin: 0; font-size: 1rem; color: #fff; margin-right: 10px; white-space: nowrap;}
+
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: #333;
+            padding: 4px 10px;
+            border-radius: 4px;
+            border: 1px solid #444;
+        }
+
+        .divider { width: 1px; height: 24px; background: #444; margin: 0 2px; }
+
+        input[type="number"] {
+            background: #222;
+            border: 1px solid #555;
+            color: white;
+            width: 45px;
+            padding: 3px;
+            border-radius: 2px;
+            text-align: center;
+            font-size: 12px;
+        }
+
+        input[type="text"] {
+            background: #222;
+            border: 1px solid #555;
+            color: #4ec9b0;
+            padding: 3px;
+            border-radius: 2px;
+            font-family: monospace;
+            width: 90px;
+            font-size: 12px;
+            text-align: center;
+        }
+
+        /* Short text inputs for characters */
+        input.char-input {
+            width: 20px;
+            text-align: center;
+            color: #fff;
+        }
+
+        /* Tool Toggle Styles */
+        .tool-btn {
+            background-color: #3e3e42;
+            color: #aaa;
+            border: 1px solid #555;
+            padding: 4px 10px;
+            cursor: pointer;
+            border-radius: 2px;
+            font-size: 12px;
+        }
+        .tool-btn.active {
+            background-color: var(--accent);
+            color: white;
+            border-color: #009dfd;
+        }
+
+        .brush-indicator {
+            width: 20px;
+            height: 20px;
+            background: var(--accent);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            border-radius: 3px;
+            font-family: monospace;
+            border: 1px solid #fff;
+            font-size: 12px;
+        }
+
+        button {
+            background-color: #3e3e42;
+            color: white;
+            border: 1px solid #555;
+            padding: 4px 10px;
+            cursor: pointer;
+            border-radius: 2px;
+            font-size: 12px;
+        }
+        button:hover { background-color: #505055; }
+        button.primary { background-color: var(--accent); border-color: var(--accent); }
+        button.danger { background-color: #8a2d2d; border-color: #8a2d2d; }
+
+        #imgInput { display: none; }
+
+        .workspace {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        #grid-container {
+            flex: 1;
+            overflow: auto;
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+            padding: 20px;
+            cursor: crosshair;
+            background-color: #1e1e1e;
+        }
+
+        .grid-wrapper {
+            display: grid;
+            gap: 1px;
+            background-color: #444;
+            border: 1px solid #555;
+        }
+
+        .cell {
+            width: 14px;
+            height: 14px;
+            background-color: #1e1e1e;
+            color: #888;
+            font-family: monospace;
+            font-size: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        /* Visualization */
+        .cell[data-val="_"] { color: #2d2d2d; background-color: #1e1e1e; } 
+        .cell[data-val="0"] { background-color: #000; color: #333; }
+        .cell[data-val="1"] { background-color: #fff; color: #ccc; }
+        .cell:not([data-val="_"]):not([data-val="0"]):not([data-val="1"]) { 
+            color: #fff; background-color: #2a2a2a; 
+        }
+
+        .sidebar {
+            width: 300px;
+            background-color: var(--panel-bg);
+            border-left: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            padding: 10px;
+            gap: 10px;
+            box-shadow: -5px 0 10px rgba(0,0,0,0.2);
+        }
+
+        textarea {
+            flex: 1;
+            background-color: #181818;
+            color: #9cdcfe;
+            border: 1px solid var(--border);
+            padding: 10px;
+            font-family: 'Consolas', monospace;
+            font-size: 11px;
+            resize: none;
+            white-space: pre;
+        }
+
+        label { font-size: 11px; color: #aaa; }
+        small { font-size: 10px; color: #888; }
+        
+        .vert-group { display: flex; flex-direction: column; gap: 2px; }
+    </style>
+</head>
+<body>
+
+    <div class="toolbar">
+        <h1>Map Editor</h1>
+
+        <div class="control-group">
+            <div class="vert-group">
+                <input type="number" id="rowsInput" value="50" title="Rows">
+                <input type="number" id="colsInput" value="50" title="Cols">
+            </div>
+            <button onclick="applyResize()">Size</button>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="control-group">
+            <button class="tool-btn active" id="btnBrush" onclick="setTool('brush')">🖌️</button>
+            <button class="tool-btn" id="btnBucket" onclick="setTool('bucket')">🌊</button>
+        </div>
+
+        <div class="control-group" id="brushSettings">
+            <label>Brush:</label>
+            <div id="brushDisplay" class="brush-indicator">x</div>
+            <input type="range" id="brushSize" min="1" max="5" value="1" style="width: 40px;" title="Size">
+        </div>
+
+        <div class="control-group" id="bucketSettings" style="display:none;">
+            <div class="vert-group">
+                <input type="text" id="gradientSeq" value="0123456789" title="Sequence">
+                <div style="display:flex; gap:4px; align-items:center;">
+                    <label>Band:</label>
+                    <input type="number" id="fillStep" value="2" min="1" style="width:30px">
+                </div>
+            </div>
+            <div style="display:flex; flex-direction:column; justify-content:center;">
+                <input type="checkbox" id="loopGradient">
+                <label for="loopGradient" style="font-size:9px">Loop</label>
+            </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="control-group">
+            <input type="text" id="findVal" value="0" class="char-input" title="Find">
+            <label>&rarr;</label>
+            <input type="text" id="replaceVal" value="_" class="char-input" title="Replace">
+            <button onclick="triggerReplace()" title="Replace all instances">Rep</button>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="control-group">
+            <button onclick="triggerImport()" class="primary">📷 Import</button>
+            <div class="vert-group">
+                <div style="display:flex; gap:2px; align-items:center;">
+                    <label style="width:10px;">W:</label>
+                    <input type="number" id="imgW" value="50">
+                </div>
+                <div style="display:flex; gap:2px; align-items:center;">
+                    <label style="width:10px;">H:</label>
+                    <input type="number" id="imgH" value="50">
+                </div>
+            </div>
+            <div class="vert-group" style="justify-content:center; margin-left:5px;">
+                <input type="checkbox" id="resizeOnImport" checked>
+                <label for="resizeOnImport">Resize</label>
+            </div>
+            <input type="file" id="imgInput" accept="image/*" onchange="handleImageUpload(this)">
+        </div>
+
+        <div style="margin-left: auto;">
+            <button class="danger" onclick="clearGrid()">Clear</button>
+        </div>
+    </div>
+
+    <div class="workspace">
+        <div id="grid-container">
+            <div id="grid" class="grid-wrapper"></div>
+        </div>
+
+        <div class="sidebar">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <label style="font-weight: bold; color: white;">C++ Output</label>
+                <button onclick="generateCode()" class="primary">Generate</button>
+            </div>
+            
+            <textarea id="cppOutput" readonly placeholder="Output..."></textarea>
+            
+            <div style="display: flex; align-items: center; gap: 5px;">
+                <input type="checkbox" id="quoteToggle">
+                <label for="quoteToggle">Use Quotes ('x')</label>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- STATE ---
+        let ROWS = 50;
+        let COLS = 50;
+        const DEFAULT_CHAR = '_';
+        
+        let gridData = [];
+        let isPainting = false;
+        let activeTool = 'brush'; // 'brush' or 'bucket'
+        let currentBrush = 'x';
+        
+        // --- INIT ---
+        window.onload = () => {
+            gridData = createEmptyGrid(ROWS, COLS);
+            renderGrid();
+            setupEventListeners();
+        };
+
+        function createEmptyGrid(r, c) {
+            let arr = [];
+            for (let i = 0; i < r; i++) {
+                arr.push(new Array(c).fill(DEFAULT_CHAR));
+            }
+            return arr;
+        }
+
+        // --- EVENTS ---
+        function setupEventListeners() {
+            window.addEventListener('keydown', (e) => {
+                if (e.ctrlKey || e.altKey || e.metaKey) return;
+                if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA') return;
+
+                if (e.key.length === 1) {
+                    currentBrush = e.key;
+                    updateBrushDisplay();
+                }
+            });
+
+            window.addEventListener('mouseup', () => isPainting = false);
+        }
+
+        function setTool(tool) {
+            activeTool = tool;
+            
+            document.getElementById('btnBrush').className = tool === 'tool-btn ' + (tool === 'brush' ? 'active' : '');
+            document.getElementById('btnBucket').className = tool === 'tool-btn ' + (tool === 'bucket' ? 'active' : '');
+            
+            document.getElementById('brushSettings').style.display = tool === 'brush' ? 'flex' : 'none';
+            document.getElementById('bucketSettings').style.display = tool === 'bucket' ? 'flex' : 'none';
+        }
+
+        function updateBrushDisplay() {
+            document.getElementById('brushDisplay').innerText = currentBrush;
+        }
+
+        function triggerImport() {
+            document.getElementById('imgInput').click();
+        }
+
+        // --- GRID INTERACTION ---
+        function handleMouseDown(r, c, e) {
+            e.preventDefault();
+            if (activeTool === 'brush') {
+                isPainting = true;
+                paintBrush(r, c);
+            } else if (activeTool === 'bucket') {
+                performGradientFill(r, c);
+            }
+        }
+
+        function handleMouseEnter(r, c) {
+            if (activeTool === 'brush' && isPainting) {
+                paintBrush(r, c);
+            }
+        }
+
+        // --- TOOLS ---
+        function paintBrush(centerR, centerC) {
+            const size = parseInt(document.getElementById('brushSize').value);
+            const offset = Math.floor(size / 2);
+            const startR = centerR - offset;
+            const startC = centerC - offset;
+            
+            for(let r = startR; r < startR + size; r++) {
+                for(let c = startC; c < startC + size; c++) {
+                    if(r >= 0 && r < ROWS && c >= 0 && c < COLS) {
+                        applyToCell(r, c, currentBrush);
+                    }
+                }
+            }
+        }
+
+        function performGradientFill(startR, startC) {
+            const targetChar = gridData[startR][startC];
+            const sequence = document.getElementById('gradientSeq').value;
+            const stepSize = parseInt(document.getElementById('fillStep').value) || 1;
+            
+            if (!sequence) return;
+
+            const isLoop = document.getElementById('loopGradient').checked;
+            
+            let queue = [[startR, startC, 0]];
+            let visited = new Set();
+            visited.add(`${startR},${startC}`);
+
+            while (queue.length > 0) {
+                const [r, c, dist] = queue.shift();
+                const bandIndex = Math.floor(dist / stepSize);
+                
+                let charIndex = isLoop ? (bandIndex % sequence.length) : Math.min(bandIndex, sequence.length - 1);
+                const newChar = sequence[charIndex];
+
+                applyToCell(r, c, newChar);
+
+                [[r-1,c], [r+1,c], [r,c-1], [r,c+1]].forEach(([nr, nc]) => {
+                    if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS) {
+                        const key = `${nr},${nc}`;
+                        if (!visited.has(key) && gridData[nr][nc] === targetChar) {
+                            visited.add(key);
+                            queue.push([nr, nc, dist + 1]);
+                        }
+                    }
+                });
+            }
+        }
+
+        function triggerReplace() {
+            const find = document.getElementById('findVal').value.substring(0, 1) || '0';
+            const replace = document.getElementById('replaceVal').value.substring(0, 1) || '_';
+
+            let count = 0;
+            for(let r=0; r<ROWS; r++) {
+                for(let c=0; c<COLS; c++) {
+                    if(gridData[r][c] === find) {
+                        applyToCell(r, c, replace);
+                        count++;
+                    }
+                }
+            }
+            // Optional: alert(`Replaced ${count} instances.`);
+        }
+
+        function applyToCell(r, c, val) {
+            if (gridData[r][c] === val) return;
+            gridData[r][c] = val;
+
+            const index = r * COLS + c;
+            const gridEl = document.getElementById('grid');
+            if(gridEl.children[index]) {
+                gridEl.children[index].innerText = val;
+                gridEl.children[index].dataset.val = val; 
+            }
+        }
+
+        // --- IMAGE PROCESSING ---
+        function handleImageUpload(input) {
+            if (input.files && input.files[0]) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const img = new Image();
+                    img.onload = () => processImage(img);
+                    img.src = e.target.result;
+                }
+                reader.readAsDataURL(input.files[0]);
+            }
+            input.value = '';
+        }
+
+        function processImage(img) {
+            // Read Custom Size settings
+            const targetW = parseInt(document.getElementById('imgW').value) || 50;
+            const targetH = parseInt(document.getElementById('imgH').value) || 50;
+            const shouldResize = document.getElementById('resizeOnImport').checked;
+
+            if (shouldResize) {
+                ROWS = targetH;
+                COLS = targetW;
+                gridData = createEmptyGrid(ROWS, COLS);
+                document.getElementById('rowsInput').value = ROWS;
+                document.getElementById('colsInput').value = COLS;
+                renderGrid();
+            }
+
+            const canvas = document.createElement('canvas');
+            canvas.width = targetW;
+            canvas.height = targetH;
+            const ctx = canvas.getContext('2d');
+            
+            ctx.drawImage(img, 0, 0, targetW, targetH);
+            const pixels = ctx.getImageData(0, 0, targetW, targetH).data;
+
+            for (let r = 0; r < targetH; r++) {
+                for (let c = 0; c < targetW; c++) {
+                    if (r < ROWS && c < COLS) {
+                        const i = (r * targetW + c) * 4;
+                        const avg = (pixels[i] + pixels[i+1] + pixels[i+2]) / 3;
+                        const val = avg < 100 ? '0' : '1';
+                        applyToCell(r, c, val);
+                    }
+                }
+            }
+        }
+
+        // --- CORE ---
+        function renderGrid() {
+            const gridEl = document.getElementById('grid');
+            gridEl.innerHTML = ''; 
+            gridEl.style.gridTemplateColumns = `repeat(${COLS}, 14px)`;
+
+            const fragment = document.createDocumentFragment();
+
+            for (let r = 0; r < ROWS; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'cell';
+                    cell.innerText = gridData[r][c];
+                    cell.dataset.val = gridData[r][c];
+                    
+                    cell.onmousedown = (e) => handleMouseDown(r, c, e);
+                    cell.onmouseenter = () => handleMouseEnter(r, c);
+
+                    fragment.appendChild(cell);
+                }
+            }
+            gridEl.appendChild(fragment);
+        }
+
+        function applyResize() {
+            const newR = parseInt(document.getElementById('rowsInput').value);
+            const newC = parseInt(document.getElementById('colsInput').value);
+            
+            if (newR * newC > 40000 && !confirm("Large grid. Continue?")) return;
+
+            const newGrid = [];
+            for(let r = 0; r < newR; r++) {
+                const row = [];
+                for(let c = 0; c < newC; c++) {
+                    if(r < gridData.length && c < gridData[0].length) {
+                        row.push(gridData[r][c]);
+                    } else {
+                        row.push(DEFAULT_CHAR);
+                    }
+                }
+                newGrid.push(row);
+            }
+
+            gridData = newGrid;
+            ROWS = newR;
+            COLS = newC;
+            renderGrid();
+        }
+
+        function clearGrid() {
+            if (confirm("Clear map?")) {
+                gridData = createEmptyGrid(ROWS, COLS);
+                renderGrid();
+            }
+        }
+
+        function generateCode() {
+            const useQuotes = document.getElementById('quoteToggle').checked;
+            let cpp = '{\n';
+            const rowsStr = gridData.map(row => {
+                const line = row.map(char => useQuotes ? `'${char}'` : char).join(', ');
+                return `  {${line}}`;
+            });
+            cpp += rowsStr.join(',\n');
+            cpp += '\n};';
+            document.getElementById('cppOutput').value = cpp;
+        }
+    </script>
+</body>
+</html>

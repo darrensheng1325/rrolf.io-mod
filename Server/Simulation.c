@@ -40,8 +40,8 @@ static void set_respawn_zone(struct rr_component_arena *arena, uint32_t x,
     arena->respawn_zone.y = 2 * y * dim;
 }
 
-#define SPAWN_ZONE_X 6
-#define SPAWN_ZONE_Y 13
+#define SPAWN_ZONE_X 12
+#define SPAWN_ZONE_Y 30
 
 static void set_special_zone(uint8_t biome, uint8_t (*fun)(), uint32_t x,
                              uint32_t y, uint32_t w, uint32_t h)

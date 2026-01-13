@@ -174,11 +174,7 @@ void tick_ai_neutral_ornithomimus(EntityIdx entity,
         struct rr_vector delta = {physical2->x, physical2->y};
         struct rr_vector target_pos = {physical->x, physical->y};
         rr_vector_sub(&delta, &target_pos);
-        if (rr_simulation_get_mob(simulation, entity)->rarity >=
-            rr_rarity_id_exotic)
-            physical->bearing_angle = rr_vector_theta(&delta);
-        else
-            physical->bearing_angle = rr_vector_theta(&delta) + M_PI;
+        physical->bearing_angle = rr_vector_theta(&delta);
 
         tick_idle_move_sinusoid(entity, simulation, RR_PLAYER_SPEED);
         break;
