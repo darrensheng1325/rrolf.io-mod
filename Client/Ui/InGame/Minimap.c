@@ -42,28 +42,15 @@ static uint8_t previous_biome = 255;
                 uint8_t at = grid[y * maze_dim + x].value;                     \
                 if (at == 1)                                                   \
                 {                                                              \
+                    rr_renderer_set_fill(renderer, 0xffffffff);                \
                     rr_renderer_begin_path(renderer);                          \
                     rr_renderer_fill_rect(renderer, x *s, y *s, s, s);         \
                 }                                                              \
-                else if (at != 0)                                              \
+                else                                                           \
                 {                                                              \
-                    uint8_t left = (at >> 1) & 1;                              \
-                    uint8_t top = at & 1;                                      \
-                    uint8_t inverse = (at >> 3) & 1;                           \
+                    rr_renderer_set_fill(renderer, 0xff000000);                \
                     rr_renderer_begin_path(renderer);                          \
-                    rr_renderer_move_to(renderer, (x + inverse ^ left) * s,    \
-                                        (y + inverse ^ top) * s);              \
-                    float start_angle = 0;                                     \
-                    if (top == 0 && left == 1)                                 \
-                        start_angle = M_PI / 2;                                \
-                    else if (top == 1 && left == 1)                            \
-                        start_angle = M_PI;                                    \
-                    else if (top == 1 && left == 0)                            \
-                        start_angle = M_PI * 3 / 2;                            \
-                    rr_renderer_partial_arc(renderer, (x + left) * s,          \
-                                            (y + top) * s, s, start_angle,     \
-                                            start_angle + M_PI / 2, 0);        \
-                    rr_renderer_fill(renderer);                                \
+                    rr_renderer_fill_rect(renderer, x *s, y *s, s, s);         \
                 }                                                              \
             }                                                                  \
     }
@@ -129,7 +116,6 @@ static void minimap_on_render(struct rr_ui_element *this, struct rr_game *game)
 struct rr_ui_element *rr_ui_minimap_init(struct rr_game *game)
 {
     struct rr_ui_element *this = rr_ui_element_init();
-
     this->abs_width = this->width = this->abs_height = this->height = 200;
     this->on_render = minimap_on_render;
     rr_renderer_init(&minimap);
