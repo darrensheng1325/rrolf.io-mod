@@ -139,7 +139,10 @@ void rr_renderer_draw_hell_creek_mob(struct rr_renderer *renderer, uint8_t mob_i
     rr_renderer_reset_color_filter(renderer);
     
     float animation_value = sinf(raw_animation_tick);
-    float radius = RR_MOB_RARITY_SCALING[rr_rarity_id_common].radius * 20.0f; // Default radius, will be scaled by caller
+    // Base radius - will be scaled by caller via rr_renderer_scale
+    // In C++ code, this is attr.radius, which is the actual radius value
+    // Since scaling is applied by caller, we use a base size that represents the unscaled radius
+    float radius = 15.0f; // Base radius size
     uint32_t seed = (uint32_t)(raw_animation_tick * 1000.0f); // Use animation as seed
     uint8_t attr_color = 0; // Default color
     uint32_t base_color = 0xffffe763;
@@ -284,7 +287,7 @@ void rr_renderer_draw_hell_creek_mob(struct rr_renderer *renderer, uint8_t mob_i
         rr_renderer_fill(renderer);
         break;
         
-    case rr_mob_id_tree: // Ladybug tree
+    case rr_mob_id_edmontosaurus: // Ladybug tree
         rr_renderer_scale(renderer, radius / 30.0f);
         SET_BASE_COLOR(0xffeb4034, flags, attr_color);
         rr_renderer_set_fill(renderer, 0xff111111);
@@ -667,7 +670,7 @@ void rr_renderer_draw_hell_creek_mob(struct rr_renderer *renderer, uint8_t mob_i
         rr_renderer_stroke(renderer);
         break;
         
-    case rr_mob_id_edmontosaurus: // Sandstorm
+    case rr_mob_id_tree: // Sandstorm
         SET_BASE_COLOR(0xffd5c7a6, flags, attr_color);
         rr_renderer_set_line_width(renderer, radius / 5.0f);
         rr_renderer_set_line_cap(renderer, 1);
