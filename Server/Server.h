@@ -63,3 +63,11 @@ struct rr_squad *rr_client_get_squad(struct rr_server *,
 // Blocking function. The only time this function will never end unless the
 // server crashes
 void rr_server_run(struct rr_server *);
+
+#ifdef RR_WORKER_MODE
+// Worker mode functions
+void server_tick_worker(struct rr_server *this);
+#endif
+
+// Message handling function (used by both normal and worker mode)
+void server_handle_client_message(struct rr_server *this, struct rr_server_client *client, struct proto_bug *encoder, uint8_t header);

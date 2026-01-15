@@ -63,8 +63,9 @@ void rr_local_storage_store_bytes(char *label, void const *bytes, uint64_t size)
     EM_ASM(
         {
             const string = UTF8ToString($0);
-            const bytes =
-                new TextDecoder().decode(HEAPU8.subarray($1, $1 + $2 - 1));
+            // Copy to regular ArrayBuffer to avoid SharedArrayBuffer issues
+            const subarray = HEAPU8.subarray($1, $1 + $2 - 1);
+            const bytes = new TextDecoder().decode(new Uint8Array(subarray));
 
             window.localStorage[string] = bytes;
         },

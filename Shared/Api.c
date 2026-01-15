@@ -47,7 +47,11 @@ size_t write_callback(void *contents, size_t size, size_t nmemb, void *userp)
 
 void rr_api_get_password(char const *token, void *captures)
 {
-#ifdef EMSCRIPTEN
+#ifdef SINGLE_PLAYER_BUILD
+    // In single-player mode, skip API call and directly call the callback with a dummy password
+    extern void rr_api_on_get_password(char *s, void *captures);
+    rr_api_on_get_password("single-player-password", captures);
+#elif defined(EMSCRIPTEN)
     EM_ASM(
         {
             fetch(UTF8ToString($0) + "user_get_password/" + UTF8ToString($1))

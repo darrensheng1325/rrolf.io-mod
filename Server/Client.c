@@ -15,7 +15,14 @@
 
 #include <Server/Client.h>
 
+#ifndef RR_WORKER_MODE
 #include <libwebsockets.h>
+#else
+// Stub definitions for worker mode (no libwebsockets)
+#define LWS_PRE 0
+typedef void* lws;
+static inline void lws_callback_on_writable(lws *wsi) { (void)wsi; }
+#endif
 #include <math.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -25,6 +32,7 @@
 #include <Server/EntityAllocation.h>
 #include <Server/Server.h>
 #include <Server/Simulation.h>
+#include <Server/WorkerStorage.h>
 #include <Shared/Binary.h>
 #include <Shared/Component/PlayerInfo.h>
 #include <Shared/Crypto.h>
@@ -36,9 +44,16 @@ double CRAFT_XP_GAINS[rr_rarity_id_max - 1] = {1, 8, 60, 750, 25000, 1000000, 10
 void rr_server_client_init(struct rr_server_client *this)
 {
     memset(this, 0, sizeof *this);
+#ifdef RR_WORKER_MODE
+    // Use constant values in worker mode for single-player
+    this->clientbound_encryption_key = 0x1234567890ABCDEFull;
+    this->serverbound_encryption_key = 0xFEDCBA0987654321ull;
+    this->requested_verification = 0x1111111111111111ull;
+#else
     this->clientbound_encryption_key = rr_get_rand();
     this->serverbound_encryption_key = rr_get_rand();
     this->requested_verification = rr_get_rand();
+#endif
     this->speed_percent = 1;
 }
 
@@ -80,8 +95,13 @@ void rr_server_client_create_flower(struct rr_server_client *this)
         rr_binary_encoder_write_uint8(&encoder, slot->rarity);
     }
     rr_binary_encoder_write_uint8(&encoder, 0);
+#ifdef RR_WORKER_MODE
+    // In worker mode, we don't send to API client
+    // The flower creation is handled differently
+#else
     lws_write(this->server->api_client, encoder.start,
               encoder.at - encoder.start, LWS_WRITE_BINARY);
+#endif
 }
 
 void rr_server_client_write_message(struct rr_server_client *this,
@@ -90,18 +110,32 @@ void rr_server_client_write_message(struct rr_server_client *this,
     if (this->message_length++ >= 512)
     {
         this->pending_kick = 1;
+#ifndef RR_WORKER_MODE
         lws_callback_on_writable(this->socket_handle);
+#endif
         return;
     }
+    
+#ifdef RR_WORKER_MODE
+    // In worker mode, use shared memory instead of message queue
+    extern void rr_server_shared_send_message(uint8_t *data, uint32_t size);
+    rr_server_shared_send_message(data, (uint32_t)size);
+    return;
+#endif
+    
+    // Allocate message and copy data BEFORE encryption to avoid corrupting the source buffer
+    struct rr_server_client_message *message = malloc(sizeof *message);
+    uint8_t *packet = malloc(LWS_PRE + size);
+    memcpy(packet + LWS_PRE, data, size);
+    
+    // Encrypt the copy, not the original buffer
     if (this->received_first_packet)
     {
         this->clientbound_encryption_key =
             rr_get_hash(this->clientbound_encryption_key);
-        rr_encrypt(data, size, this->clientbound_encryption_key);
+        rr_encrypt(packet + LWS_PRE, size, this->clientbound_encryption_key);
     }
-    struct rr_server_client_message *message = malloc(sizeof *message);
-    uint8_t *packet = malloc(LWS_PRE + size);
-    memcpy(packet + LWS_PRE, data, size);
+    
     message->next = NULL;
     message->len = size;
     message->packet = packet;
@@ -252,6 +286,10 @@ void rr_server_client_write_to_api(struct rr_server_client *this)
                                             this->craft_fails[id][rarity]);
         }
     rr_binary_encoder_write_uint8(&encoder, 0);
+#ifdef RR_WORKER_MODE
+    rr_worker_storage_save_account(this->rivet_account.uuid, this);
+#else
     lws_write(this->server->api_client, encoder.start,
               encoder.at - encoder.start, LWS_WRITE_BINARY);
+#endif
 }

@@ -143,6 +143,26 @@ static void set_spawn_zones()
     }
 }
 
+#ifdef RR_WORKER_MODE
+// In worker mode, we need a version that matches the client's signature
+// but does server initialization
+void rr_simulation_init_server(struct rr_simulation *this)
+{
+    memset(this, 0, sizeof *this);
+    EntityIdx id = rr_simulation_alloc_entity(this);
+    struct rr_component_arena *arena = rr_simulation_add_arena(this, id);
+    arena->biome = RR_GLOBAL_BIOME;
+    rr_component_arena_spatial_hash_init(arena, this);
+    set_respawn_zone(arena, SPAWN_ZONE_X, SPAWN_ZONE_Y);
+    set_spawn_zones();
+}
+
+// Also provide the client's version (just zeros memory)
+void rr_simulation_init(struct rr_simulation *this)
+{
+    memset(this, 0, sizeof *this);
+}
+#else
 void rr_simulation_init(struct rr_simulation *this)
 {
     memset(this, 0, sizeof *this);
@@ -153,6 +173,7 @@ void rr_simulation_init(struct rr_simulation *this)
     set_respawn_zone(arena, SPAWN_ZONE_X, SPAWN_ZONE_Y);
     set_spawn_zones();
 }
+#endif
 
 struct too_close_captures
 {
@@ -411,8 +432,16 @@ static void tick_maze(struct rr_simulation *this)
 
 static int64_t last_zone_epoch = -1;
 
+#ifdef RR_WORKER_MODE
+// In worker mode (single-player), match client signature
+void rr_simulation_tick(struct rr_simulation *this, float delta)
+#else
 void rr_simulation_tick(struct rr_simulation *this)
+#endif
 {
+#ifdef RR_WORKER_MODE
+    (void)delta; // Server doesn't use delta, but client passes it
+#endif
     struct timeval t;
     gettimeofday(&t, NULL);
     int64_t time = (t.tv_sec * 1000000 + t.tv_usec);

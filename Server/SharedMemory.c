@@ -1,0 +1,351 @@
+// Copyright (C) 2024  Paul Johnson
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+#include <Server/SharedMemory.h>
+#include <Server/Server.h>
+#include <Server/Client.h>
+#include <Server/Simulation.h>
+#include <Shared/Crypto.h>
+#include <Shared/pb.h>
+#include <emscripten.h>
+#include <string.h>
+#include <stdlib.h>
+#include <stdio.h>
+
+#ifdef RR_WORKER_MODE
+
+extern void server_tick_worker(struct rr_server *this);
+extern void rr_server_client_free(struct rr_server_client *this);
+extern void server_handle_client_message(struct rr_server *server, struct rr_server_client *client, struct proto_bug *encoder, uint8_t header);
+extern uint8_t *outgoing_message;
+
+static struct rr_server *g_server = NULL;
+static struct rr_shared_memory *g_shared_mem = NULL;
+
+void rr_shared_memory_init(struct rr_shared_memory *mem)
+{
+    if (mem == NULL)
+        return;
+    memset(mem, 0, sizeof(struct rr_shared_memory));
+    g_shared_mem = mem;
+}
+
+void rr_server_shared_init(void)
+{
+    if (g_server != NULL)
+        return;
+    
+    g_server = calloc(1, sizeof(struct rr_server));
+    rr_server_init(g_server);
+    g_server->api_ws_ready = 1;
+    
+    if (g_shared_mem)
+        g_shared_mem->server_initialized = 1;
+}
+
+void rr_server_shared_tick(void)
+{
+    if (g_server == NULL)
+        return;
+    
+    // Process incoming messages from client
+    if (g_shared_mem)
+    {
+        uint8_t message_buffer[65536];
+        uint32_t size = rr_server_shared_get_client_message(message_buffer, sizeof(message_buffer));
+        while (size > 0)
+        {
+            // Handle the message
+            if (!rr_bitset_get(g_server->clients_in_use, 0))
+            {
+                // No client connected yet
+                size = rr_server_shared_get_client_message(message_buffer, sizeof(message_buffer));
+                continue;
+            }
+            
+            struct rr_server_client *client = &g_server->clients[0];
+            
+            // Handle first packet (connection)
+            if (!client->received_first_packet)
+            {
+                client->received_first_packet = 1;
+                
+                struct proto_bug encoder;
+                proto_bug_init(&encoder, message_buffer);
+                proto_bug_set_bound(&encoder, message_buffer + size);
+                
+                proto_bug_read_uint64(&encoder, "useless bytes");
+                uint64_t received_verification = proto_bug_read_uint64(&encoder, "verification");
+                
+                if (received_verification != client->requested_verification)
+                {
+                    printf("Invalid verification: expected %llu, got %llu\n", 
+                           (unsigned long long)client->requested_verification, 
+                           (unsigned long long)received_verification);
+                    size = rr_server_shared_get_client_message(message_buffer, sizeof(message_buffer));
+                    continue;
+                }
+                
+                memset(&client->rivet_account, 0, sizeof(struct rr_rivet_account));
+                proto_bug_read_string(&encoder, client->rivet_account.token, 300, "rivet token");
+                proto_bug_read_string(&encoder, client->rivet_account.uuid, 100, "rivet uuid");
+                
+                if (proto_bug_read_varuint(&encoder, "dev_flag") == 49453864343)
+                    client->dev = 1;
+                
+                printf("<rr_server::socket_verified::%s>\n", client->rivet_account.uuid);
+                
+                // Load account from storage
+                extern int rr_worker_storage_load_account(char *uuid, struct rr_server_client *client);
+                int account_loaded = rr_worker_storage_load_account(client->rivet_account.uuid, client);
+                if (!account_loaded)
+                {
+                    printf("<rr_server::account_not_found::creating_new>\n");
+                    client->experience = 0;
+                    memset(client->inventory, 0, sizeof(client->inventory));
+                    memset(client->craft_fails, 0, sizeof(client->craft_fails));
+                    client->inventory[1][0] = 5; // 5 common basic petals
+                    extern void rr_worker_storage_save_account(char *uuid, struct rr_server_client *client);
+                    rr_worker_storage_save_account(client->rivet_account.uuid, client);
+                }
+                client->verified = 1;
+                printf("<rr_server::account_loaded::verified=1>\n");
+                
+                // In single-player mode, automatically join client to a squad
+                extern uint8_t rr_client_create_squad(struct rr_server *server, struct rr_server_client *client);
+                extern uint8_t rr_client_join_squad(struct rr_server *server, struct rr_server_client *client, uint8_t pos);
+                uint8_t squad = rr_client_create_squad(g_server, client);
+                if (squad != 0xFF) // 0xFF is RR_ERROR_CODE_INVALID_SQUAD
+                {
+                    rr_client_join_squad(g_server, client, squad);
+                    printf("<rr_server::auto_joined_squad::squad=%u>\n", squad);
+                }
+                
+                // Send encryption keys response (no encryption in single-player)
+                struct proto_bug response_encoder;
+                proto_bug_init(&response_encoder, outgoing_message);
+                proto_bug_write_uint64(&response_encoder, client->requested_verification, "verification");
+                proto_bug_write_uint32(&response_encoder, rr_get_rand(), "useless bytes");
+                proto_bug_write_uint64(&response_encoder, client->clientbound_encryption_key, "c encryption key");
+                proto_bug_write_uint64(&response_encoder, client->serverbound_encryption_key, "s encryption key");
+                rr_server_shared_send_message(response_encoder.start, response_encoder.current - response_encoder.start);
+                
+                // Send account data
+                extern void rr_server_client_write_account(struct rr_server_client *client);
+                rr_server_client_write_account(client);
+                
+                // Send initial update message to enable buttons
+                if (client->in_squad)
+                {
+                    extern void rr_server_client_broadcast_update(struct rr_server_client *client);
+                    rr_server_client_broadcast_update(client);
+                    printf("<rr_server::sent_initial_update>\n");
+                }
+                
+                if (g_shared_mem)
+                    g_shared_mem->connection_established = 1;
+                
+                size = rr_server_shared_get_client_message(message_buffer, sizeof(message_buffer));
+                continue;
+            }
+            
+            if (!client->verified)
+            {
+                size = rr_server_shared_get_client_message(message_buffer, sizeof(message_buffer));
+                continue;
+            }
+            
+            // Process normal game messages
+            struct proto_bug encoder;
+            proto_bug_init(&encoder, message_buffer);
+            proto_bug_set_bound(&encoder, message_buffer + size);
+            uint8_t header = proto_bug_read_uint8(&encoder, "header");
+            
+            server_handle_client_message(g_server, client, &encoder, header);
+            
+            size = rr_server_shared_get_client_message(message_buffer, sizeof(message_buffer));
+        }
+    }
+    
+    // Run server tick
+    server_tick_worker(g_server);
+}
+
+uint32_t rr_server_shared_get_client_message(uint8_t *buffer, uint32_t max_size)
+{
+    if (g_shared_mem == NULL || buffer == NULL || max_size == 0)
+        return 0;
+    
+    uint32_t read_pos = g_shared_mem->client_to_server_read_pos;
+    uint32_t write_pos = g_shared_mem->client_to_server_write_pos;
+    
+    if (read_pos == write_pos)
+        return 0; // No messages
+    
+    // Read message size (first 4 bytes)
+    uint32_t message_size = 0;
+    memcpy(&message_size, &g_shared_mem->client_to_server_buffer[read_pos], 4);
+    read_pos = (read_pos + 4) % (sizeof(g_shared_mem->client_to_server_buffer));
+    
+    if (message_size > max_size || message_size == 0)
+    {
+        // Skip invalid message
+        g_shared_mem->client_to_server_read_pos = (read_pos + message_size) % (sizeof(g_shared_mem->client_to_server_buffer));
+        return 0;
+    }
+    
+    // Read message data
+    uint32_t bytes_to_read = message_size;
+    uint32_t bytes_read = 0;
+    while (bytes_read < bytes_to_read)
+    {
+        uint32_t chunk_size = bytes_to_read - bytes_read;
+        uint32_t available = sizeof(g_shared_mem->client_to_server_buffer) - read_pos;
+        if (chunk_size > available)
+            chunk_size = available;
+        
+        memcpy(buffer + bytes_read, &g_shared_mem->client_to_server_buffer[read_pos], chunk_size);
+        read_pos = (read_pos + chunk_size) % (sizeof(g_shared_mem->client_to_server_buffer));
+        bytes_read += chunk_size;
+    }
+    
+    g_shared_mem->client_to_server_read_pos = read_pos;
+    return message_size;
+}
+
+void rr_server_shared_send_message(uint8_t *data, uint32_t size)
+{
+    if (g_shared_mem == NULL || data == NULL || size == 0)
+        return;
+    
+    uint32_t write_pos = g_shared_mem->server_to_client_write_pos;
+    uint32_t read_pos = g_shared_mem->server_to_client_read_pos;
+    
+    // Check if there's enough space (leave some headroom)
+    uint32_t available = (read_pos > write_pos) ? 
+        (read_pos - write_pos - 1) : 
+        (sizeof(g_shared_mem->server_to_client_buffer) - write_pos + read_pos - 1);
+    
+    if (size + 4 > available)
+    {
+        printf("<rr_server::shared_memory_full::dropping_message>\n");
+        return; // Buffer full, drop message
+    }
+    
+    // Write message size
+    memcpy(&g_shared_mem->server_to_client_buffer[write_pos], &size, 4);
+    write_pos = (write_pos + 4) % (sizeof(g_shared_mem->server_to_client_buffer));
+    
+    // Write message data
+    uint32_t bytes_written = 0;
+    while (bytes_written < size)
+    {
+        uint32_t chunk_size = size - bytes_written;
+        uint32_t available_space = sizeof(g_shared_mem->server_to_client_buffer) - write_pos;
+        if (chunk_size > available_space)
+            chunk_size = available_space;
+        
+        memcpy(&g_shared_mem->server_to_client_buffer[write_pos], data + bytes_written, chunk_size);
+        write_pos = (write_pos + chunk_size) % (sizeof(g_shared_mem->server_to_client_buffer));
+        bytes_written += chunk_size;
+    }
+    
+    g_shared_mem->server_to_client_write_pos = write_pos;
+}
+
+uint32_t rr_client_shared_get_server_message(uint8_t *buffer, uint32_t max_size)
+{
+    if (g_shared_mem == NULL || buffer == NULL || max_size == 0)
+        return 0;
+    
+    uint32_t read_pos = g_shared_mem->server_to_client_read_pos;
+    uint32_t write_pos = g_shared_mem->server_to_client_write_pos;
+    
+    if (read_pos == write_pos)
+        return 0; // No messages
+    
+    // Read message size (first 4 bytes)
+    uint32_t message_size = 0;
+    memcpy(&message_size, &g_shared_mem->server_to_client_buffer[read_pos], 4);
+    read_pos = (read_pos + 4) % (sizeof(g_shared_mem->server_to_client_buffer));
+    
+    if (message_size > max_size || message_size == 0)
+    {
+        // Skip invalid message
+        g_shared_mem->server_to_client_read_pos = (read_pos + message_size) % (sizeof(g_shared_mem->server_to_client_buffer));
+        return 0;
+    }
+    
+    // Read message data
+    uint32_t bytes_to_read = message_size;
+    uint32_t bytes_read = 0;
+    while (bytes_read < bytes_to_read)
+    {
+        uint32_t chunk_size = bytes_to_read - bytes_read;
+        uint32_t available = sizeof(g_shared_mem->server_to_client_buffer) - read_pos;
+        if (chunk_size > available)
+            chunk_size = available;
+        
+        memcpy(buffer + bytes_read, &g_shared_mem->server_to_client_buffer[read_pos], chunk_size);
+        read_pos = (read_pos + chunk_size) % (sizeof(g_shared_mem->server_to_client_buffer));
+        bytes_read += chunk_size;
+    }
+    
+    g_shared_mem->server_to_client_read_pos = read_pos;
+    return message_size;
+}
+
+void rr_client_shared_send_message(uint8_t *data, uint32_t size)
+{
+    if (g_shared_mem == NULL || data == NULL || size == 0)
+        return;
+    
+    uint32_t write_pos = g_shared_mem->client_to_server_write_pos;
+    uint32_t read_pos = g_shared_mem->client_to_server_read_pos;
+    
+    // Check if there's enough space (leave some headroom)
+    uint32_t available = (read_pos > write_pos) ? 
+        (read_pos - write_pos - 1) : 
+        (sizeof(g_shared_mem->client_to_server_buffer) - write_pos + read_pos - 1);
+    
+    if (size + 4 > available)
+    {
+        printf("<rr_client::shared_memory_full::dropping_message>\n");
+        return; // Buffer full, drop message
+    }
+    
+    // Write message size
+    memcpy(&g_shared_mem->client_to_server_buffer[write_pos], &size, 4);
+    write_pos = (write_pos + 4) % (sizeof(g_shared_mem->client_to_server_buffer));
+    
+    // Write message data
+    uint32_t bytes_written = 0;
+    while (bytes_written < size)
+    {
+        uint32_t chunk_size = size - bytes_written;
+        uint32_t available_space = sizeof(g_shared_mem->client_to_server_buffer) - write_pos;
+        if (chunk_size > available_space)
+            chunk_size = available_space;
+        
+        memcpy(&g_shared_mem->client_to_server_buffer[write_pos], data + bytes_written, chunk_size);
+        write_pos = (write_pos + chunk_size) % (sizeof(g_shared_mem->client_to_server_buffer));
+        bytes_written += chunk_size;
+    }
+    
+    g_shared_mem->client_to_server_write_pos = write_pos;
+}
+
+#endif // RR_WORKER_MODE
+

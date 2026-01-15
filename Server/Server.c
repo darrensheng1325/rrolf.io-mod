@@ -22,7 +22,44 @@
 #include <sys/time.h>
 #include <unistd.h>
 
+#ifndef RR_WORKER_MODE
 #include <libwebsockets.h>
+#else
+#include <emscripten.h>
+#include <Server/WorkerStorage.h>
+// Stub definitions for worker mode (no libwebsockets)
+#define LWS_PRE 0
+typedef void* lws;
+typedef void* lws_context;
+enum lws_callback_reasons {
+    LWS_CALLBACK_ESTABLISHED = 0,
+    LWS_CALLBACK_CLOSED = 1,
+    LWS_CALLBACK_SERVER_WRITEABLE = 2,
+    LWS_CALLBACK_RECEIVE = 3,
+    LWS_CALLBACK_CLIENT_ESTABLISHED = 4,
+    LWS_CALLBACK_CLIENT_RECEIVE = 5,
+    LWS_CALLBACK_CLIENT_CLOSED = 6,
+    LWS_CALLBACK_CLIENT_CONNECTION_ERROR = 7
+};
+enum lws_close_status {
+    LWS_CLOSE_STATUS_GOINGAWAY = 0
+};
+enum lws_write_protocol {
+    LWS_WRITE_BINARY = 0
+};
+#define CONTEXT_PORT_NO_LISTEN 0
+static inline void lws_close_reason(lws *wsi, enum lws_close_status status, uint8_t *reason, size_t len) { (void)wsi; (void)status; (void)reason; (void)len; }
+static inline void* lws_get_opaque_user_data(lws *wsi) { (void)wsi; return NULL; }
+static inline void lws_set_opaque_user_data(lws *wsi, void *data) { (void)wsi; (void)data; }
+static inline int lws_write(lws *wsi, uint8_t *buf, size_t len, enum lws_write_protocol protocol) { (void)wsi; (void)buf; (void)len; (void)protocol; return 0; }
+static inline void lws_callback_on_writable(lws *wsi) { (void)wsi; }
+static inline void lws_context_destroy(lws_context *ctx) { (void)ctx; }
+static inline lws_context* lws_create_context(void *info) { (void)info; return NULL; }
+static inline lws* lws_client_connect_via_info(void *info) { (void)info; return NULL; }
+static inline int lws_service(lws_context *ctx, int timeout_ms) { (void)ctx; (void)timeout_ms; return 0; }
+static inline lws_context* lws_context_user(lws_context *ctx) { (void)ctx; return NULL; }
+static inline lws_context* lws_get_context(lws *wsi) { (void)wsi; return NULL; }
+#endif
 
 #include <Server/Client.h>
 #include <Server/EntityAllocation.h>
@@ -194,15 +231,28 @@ void rr_server_client_broadcast_update(struct rr_server_client *this)
     if (this->player_info != NULL)
         rr_simulation_write_binary(&server->simulation, &encoder,
                                    this->player_info);
-    rr_server_client_write_message(this, encoder.start,
-                                   encoder.current - encoder.start);
-    proto_bug_init(&encoder, outgoing_message);
-    proto_bug_write_uint8(&encoder, rr_clientbound_animation_update, "header");
+    // Copy the update message before reusing the buffer
+    uint32_t update_size = encoder.current - encoder.start;
+    uint8_t *update_copy = malloc(update_size);
+    memcpy(update_copy, encoder.start, update_size);
+    rr_server_client_write_message(this, update_copy, update_size);
+    free(update_copy);
+    
+    // Use a fresh encoder for the animation update to avoid buffer corruption
+    // Use a different part of the buffer (offset by MESSAGE_BUFFER_SIZE/2 to avoid overlap)
+    struct proto_bug animation_encoder;
+    proto_bug_init(&animation_encoder, outgoing_message + (MESSAGE_BUFFER_SIZE / 2));
+    proto_bug_write_uint8(&animation_encoder, rr_clientbound_animation_update, "header");
     for (uint32_t i = 0; i < simulation->animation_length; ++i)
-        write_animation_function(simulation, &encoder, this, i);
-    proto_bug_write_uint8(&encoder, 0, "continue");
-    rr_server_client_write_message(this, encoder.start,
-                                   encoder.current - encoder.start);
+        write_animation_function(simulation, &animation_encoder, this, i);
+    proto_bug_write_uint8(&animation_encoder, 0, "continue");
+    
+    // Copy the animation message before sending
+    uint32_t animation_size = animation_encoder.current - animation_encoder.start;
+    uint8_t *animation_copy = malloc(animation_size);
+    memcpy(animation_copy, animation_encoder.start, animation_size);
+    rr_server_client_write_message(this, animation_copy, animation_size);
+    free(animation_copy);
 }
 
 static void delete_entity_function(EntityIdx entity, void *_captures)
@@ -224,7 +274,11 @@ void rr_server_init(struct rr_server *this)
     // RR_GLOBAL_BIOME = rr_biome_id_garden;
 #endif
     rr_static_data_init();
+#ifdef RR_WORKER_MODE
+    rr_simulation_init_server(&this->simulation);
+#else
     rr_simulation_init(&this->simulation);
+#endif
     for (uint32_t i = 0; i < RR_SQUAD_COUNT; ++i)
         rr_squad_init(&this->squads[i], this, i);
 }
@@ -245,6 +299,7 @@ static void rr_simulation_tick_entity_resetter_function(EntityIdx entity,
 #undef XX
 }
 
+#ifndef RR_WORKER_MODE
 static int handle_lws_event(struct rr_server *this, struct lws *ws,
                             enum lws_callback_reasons reason, uint8_t *packet,
                             size_t size)
@@ -448,8 +503,15 @@ static int handle_lws_event(struct rr_server *this, struct lws *ws,
         if (!client->verified)
             break;
         uint8_t header = proto_bug_read_uint8(&encoder, "header");
-        switch (header)
-        {
+        server_handle_client_message(this, client, &encoder, header);
+        return 0;
+    }
+    default:
+        return 0;
+    }
+
+    return 0;
+}
         case rr_serverbound_input:
         {
             if (client->player_info == NULL)
@@ -826,7 +888,425 @@ static int handle_lws_event(struct rr_server *this, struct lws *ws,
 
     return 0;
 }
+#endif // RR_WORKER_MODE
 
+// Extract message handling logic so it can be called from worker mode
+// This function is available in both normal and worker mode
+void server_handle_client_message(struct rr_server *this, struct rr_server_client *client, struct proto_bug *encoder, uint8_t header)
+{
+    switch (header)
+    {
+    case rr_serverbound_input:
+    {
+        if (client->player_info == NULL)
+        {
+            printf("<rr_server::input_rejected::no_player_info>\n");
+            break;
+        }
+        if (client->player_info->flower_id == RR_NULL_ENTITY)
+        {
+            printf("<rr_server::input_rejected::no_flower_id>\n");
+            break;
+        }
+        if (client->dev)
+            client->speed_percent =
+                20 * proto_bug_read_float32(encoder, "speed_percent");
+        uint8_t movementFlags =
+            proto_bug_read_uint8(encoder, "movement kb flags");
+        float x = 0;
+        float y = 0;
+
+        if ((movementFlags & 64) == 0)
+        {
+            y -= (movementFlags & 1) >> 0;
+            x -= (movementFlags & 2) >> 1;
+            y += (movementFlags & 4) >> 2;
+            x += (movementFlags & 8) >> 3;
+            if (x || y)
+            {
+                float mag_1 = (RR_PLAYER_SPEED * client->speed_percent) /
+                              sqrtf(x * x + y * y);
+                x *= mag_1;
+                y *= mag_1;
+            }
+        }
+        else
+        {
+            x = proto_bug_read_float32(encoder, "mouse x");
+            y = proto_bug_read_float32(encoder, "mouse y");
+            if ((x != 0 || y != 0) && fabsf(x) < 10000 && fabsf(y) < 10000)
+            {
+                float mag_1 = sqrtf(x * x + y * y);
+                float scale =
+                    RR_PLAYER_SPEED * rr_fclamp((mag_1 - 25) / 50, 0, 1);
+                x *= scale / mag_1;
+                y *= scale / mag_1;
+            }
+        }
+        if ((x != 0 || y != 0) && fabsf(x) < 10000 && fabsf(y) < 10000)
+        {
+            client->player_accel_x = x;
+            client->player_accel_y = y;
+        }
+        else
+        {
+            client->player_accel_x = 0;
+            client->player_accel_y = 0;
+        }
+
+        client->player_info->input = (movementFlags >> 4) & 3;
+        break;
+    }
+    case rr_serverbound_petal_switch:
+    {
+        if (client->player_info->flower_id == RR_NULL_ENTITY)
+            break;
+        uint8_t pos = proto_bug_read_uint8(encoder, "petal switch");
+        while (pos != 0 && pos <= 10)
+        {
+            rr_component_player_info_petal_swap(client->player_info,
+                                                &this->simulation, pos - 1);
+            pos = proto_bug_read_uint8(encoder, "petal switch");
+        }
+        break;
+    }
+    case rr_serverbound_squad_join:
+    {
+        if (client->ticks_to_next_squad_action > 0)
+            break;
+        client->ticks_to_next_squad_action = 10;
+        uint8_t type = proto_bug_read_uint8(encoder, "join type");
+        if (type > 3)
+            break;
+        if (type == 3)
+        {
+            if (client->in_squad)
+            {
+                rr_client_leave_squad(this, client);
+                struct proto_bug encoder2;
+                proto_bug_init(&encoder2, outgoing_message);
+                proto_bug_write_uint8(&encoder2, rr_clientbound_squad_leave,
+                                      "header");
+                rr_server_client_write_message(
+                    client, encoder2.start, encoder2.current - encoder2.start);
+            }
+            break;
+        }
+        rr_client_leave_squad(this, client);
+        uint8_t squad = RR_ERROR_CODE_INVALID_SQUAD;
+        if (type == 2)
+            squad = rr_client_create_squad(this, client);
+        else if (type == 1)
+        {
+            char link[16] = {0};
+            proto_bug_read_string(encoder, link, 7, "connect link");
+            squad = rr_client_join_squad_with_code(this, link);
+        }
+        else if (type == 0)
+            squad = rr_client_find_squad(this, client);
+        if (squad == RR_ERROR_CODE_INVALID_SQUAD)
+        {
+            struct proto_bug failure;
+            proto_bug_init(&failure, outgoing_message);
+            proto_bug_write_uint8(&failure, rr_clientbound_squad_fail,
+                                  "header");
+            proto_bug_write_uint8(&failure, 0, "fail type");
+            rr_server_client_write_message(client, failure.start,
+                                           failure.current - failure.start);
+            client->in_squad = 0;
+            break;
+        }
+        if (squad == RR_ERROR_CODE_FULL_SQUAD)
+        {
+            struct proto_bug failure;
+            proto_bug_init(&failure, outgoing_message);
+            proto_bug_write_uint8(&failure, rr_clientbound_squad_fail,
+                                  "header");
+            proto_bug_write_uint8(&failure, 1, "fail type");
+            rr_server_client_write_message(client, failure.start,
+                                           failure.current - failure.start);
+            client->in_squad = 0;
+            break;
+        }
+        rr_client_join_squad(this, client, squad);
+        break;
+    }
+    case rr_serverbound_squad_ready:
+    {
+        printf("<rr_server::squad_ready_received>\n");
+        if (client->ticks_to_next_squad_action > 0)
+            break;
+        client->ticks_to_next_squad_action = 10;
+        if (!client->in_squad)
+        {
+            // In single-player mode, create a squad for the client
+            #ifdef RR_WORKER_MODE
+            uint8_t squad = rr_client_create_squad(this, client);
+            if (squad == RR_ERROR_CODE_INVALID_SQUAD)
+            {
+                printf("<rr_server::squad_ready::failed_to_create_squad>\n");
+                struct proto_bug failure;
+                proto_bug_init(&failure, outgoing_message);
+                proto_bug_write_uint8(&failure, rr_clientbound_squad_fail,
+                                      "header");
+                proto_bug_write_uint8(&failure, 0, "fail type");
+                rr_server_client_write_message(
+                    client, failure.start, failure.current - failure.start);
+                client->in_squad = 0;
+                client->pending_quick_join = 0;
+                break;
+            }
+            rr_client_join_squad(this, client, squad);
+            client->pending_quick_join = 1;
+            printf("<rr_server::squad_ready::joined_squad=%u::in_squad=%d>\n", squad, client->in_squad);
+            // Immediately create player info and flower for single-player mode
+            if (client->in_squad && rr_squad_get_client_slot(this, client)->playing == 0)
+            {
+                printf("<rr_server::squad_ready::creating_player>\n");
+                rr_squad_get_client_slot(this, client)->playing = 1;
+                rr_server_client_create_player_info(this, client);
+                rr_server_client_create_flower(client);
+                printf("<rr_server::squad_ready::player_created::player_info=%p::flower_id=%u>\n",
+                       (void*)client->player_info, 
+                       client->player_info ? client->player_info->flower_id : 0);
+            }
+            #else
+            uint8_t squad = rr_client_find_squad(this, client);
+            if (squad == RR_ERROR_CODE_INVALID_SQUAD)
+            {
+                struct proto_bug failure;
+                proto_bug_init(&failure, outgoing_message);
+                proto_bug_write_uint8(&failure, rr_clientbound_squad_fail,
+                                      "header");
+                proto_bug_write_uint8(&failure, 0, "fail type");
+                rr_server_client_write_message(
+                    client, failure.start, failure.current - failure.start);
+                client->in_squad = 0;
+                client->pending_quick_join = 0;
+                break;
+            }
+            if (squad == RR_ERROR_CODE_FULL_SQUAD)
+            {
+                struct proto_bug failure;
+                proto_bug_init(&failure, outgoing_message);
+                proto_bug_write_uint8(&failure, rr_clientbound_squad_fail,
+                                      "header");
+                proto_bug_write_uint8(&failure, 1, "fail type");
+                rr_server_client_write_message(
+                    client, failure.start, failure.current - failure.start);
+                client->in_squad = 0;
+                client->pending_quick_join = 0;
+                break;
+            }
+            rr_client_join_squad(this, client, squad);
+            client->pending_quick_join = 1;
+            #endif
+        }
+        else if (client->in_squad)
+        {
+            if (rr_squad_get_client_slot(this, client)->playing == 0)
+            {
+                if (client->player_info != NULL)
+                {
+                    rr_simulation_request_entity_deletion(
+                        &this->simulation, client->player_info->parent_id);
+                    client->player_info = NULL;
+                }
+                rr_squad_get_client_slot(this, client)->playing = 1;
+                rr_server_client_create_player_info(this, client);
+                rr_server_client_create_flower(client);
+            }
+            else
+            {
+                if (client->player_info != NULL)
+                {
+                    if (rr_simulation_entity_alive(
+                            &this->simulation,
+                            client->player_info->flower_id))
+                        rr_simulation_request_entity_deletion(
+                            &this->simulation,
+                            client->player_info->flower_id);
+                    else
+                    {
+                        rr_simulation_request_entity_deletion(
+                            &this->simulation,
+                            client->player_info->parent_id);
+                        client->player_info = NULL;
+                        rr_squad_get_client_slot(this, client)->playing = 0;
+                    }
+                }
+            }
+        }
+        break;
+    }
+    case rr_serverbound_squad_update:
+    {
+        if (!client->in_squad)
+            break;
+        proto_bug_read_string(
+            encoder, rr_squad_get_client_slot(this, client)->nickname, 16,
+            "nickname");
+        uint8_t loadout_count =
+            proto_bug_read_uint8(encoder, "loadout count");
+
+        if (loadout_count > 10)
+            break;
+        struct rr_squad_member *member =
+            rr_squad_get_client_slot(this, client);
+        if (member == NULL)
+            break;
+        uint32_t temp_inv[rr_petal_id_max][rr_rarity_id_max];
+
+        memcpy(temp_inv, client->inventory, sizeof client->inventory);
+        for (uint8_t i = 0; i < loadout_count; i++)
+        {
+            uint8_t id = proto_bug_read_uint8(encoder, "id");
+            uint8_t rarity = proto_bug_read_uint8(encoder, "rarity");
+            if (id >= rr_petal_id_max)
+                break;
+            if (rarity >= rr_rarity_id_max)
+                break;
+            member->loadout[i].rarity = rarity;
+            member->loadout[i].id = id;
+            if (id && temp_inv[id][rarity]-- == 0)
+            {
+                memset(member->loadout, 0, sizeof member->loadout);
+                break;
+            }
+            id = proto_bug_read_uint8(encoder, "id");
+            rarity = proto_bug_read_uint8(encoder, "rarity");
+            if (id >= rr_petal_id_max)
+                break;
+            if (rarity >= rr_rarity_id_max)
+                break;
+            member->loadout[i + 10].rarity = rarity;
+            member->loadout[i + 10].id = id;
+            if (id && temp_inv[id][rarity]-- == 0)
+            {
+                memset(member->loadout, 0, sizeof member->loadout);
+                break;
+            }
+        }
+        if (client->pending_quick_join)
+        {
+            client->pending_quick_join = 0;
+            if (member->playing == 0)
+            {
+                if (client->player_info != NULL)
+                {
+                    rr_simulation_request_entity_deletion(
+                        &this->simulation, client->player_info->parent_id);
+                    client->player_info = NULL;
+                }
+                member->playing = 1;
+                rr_server_client_create_player_info(this, client);
+                rr_server_client_create_flower(client);
+            }
+            else
+            {
+                if (client->player_info != NULL)
+                {
+                    rr_simulation_request_entity_deletion(
+                        &this->simulation, client->player_info->parent_id);
+                    client->player_info = NULL;
+                    member->playing = 0;
+                }
+            }
+        }
+        break;
+    }
+    case rr_serverbound_private_update:
+    {
+        if (client->in_squad)
+            rr_client_get_squad(this, client)->private = 0;
+        break;
+    }
+    case rr_serverbound_squad_kick:
+    {
+        if (!client->in_squad)
+            break;
+        if (client->squad_pos != 0 && !client->dev)
+            break;
+        uint8_t pos = proto_bug_read_uint8(encoder, "kick pos");
+        if (pos >= RR_SQUAD_MEMBER_COUNT)
+            break;
+        if (pos == client->squad_pos)
+            break;
+        struct rr_squad *squad = rr_client_get_squad(this, client);
+        if (!squad->members[pos].in_use)
+            break;
+        struct rr_server_client *to_kick = squad->members[pos].client;
+        if (to_kick == NULL)
+            break;
+        if (to_kick->dev)
+            break;
+        if (to_kick->player_info != NULL)
+        {
+            rr_simulation_request_entity_deletion(
+                &this->simulation, to_kick->player_info->parent_id);
+            to_kick->player_info = NULL;
+        }
+        rr_client_leave_squad(this, to_kick);
+        struct proto_bug failure;
+        proto_bug_init(&failure, outgoing_message);
+        proto_bug_write_uint8(&failure, rr_clientbound_squad_fail,
+                              "header");
+        proto_bug_write_uint8(&failure, 2, "fail type");
+        rr_server_client_write_message(to_kick, failure.start,
+                                       failure.current - failure.start);
+        break;
+    }
+    case rr_serverbound_petals_craft:
+    {
+        uint8_t id = proto_bug_read_uint8(encoder, "craft id");
+        uint8_t rarity = proto_bug_read_uint8(encoder, "craft rarity");
+        uint32_t count = proto_bug_read_varuint(encoder, "craft count");
+        rr_server_client_craft_petal(client, id, rarity, count);
+        break;
+    }
+    case rr_serverbound_chat:
+    {
+        if (!client->in_squad)
+            break;
+        if (!client->player_info)
+            break;
+        struct rr_simulation_animation *animation =
+            &this->simulation
+                 .animations[this->simulation.animation_length++];
+        proto_bug_read_string(encoder, animation->message, 64, "chat");
+        animation->type = rr_animation_type_chat;
+        animation->squad = client->squad;
+        strncpy(animation->name,
+                rr_squad_get_client_slot(this, client)->nickname, 64);
+        break;
+    }
+    case rr_serverbound_dev_summon:
+    {
+        puts("edmonto requested");
+        if (!client->dev)
+            break;
+
+        puts("edmonto has been summoned by the gods");
+
+        uint8_t id = proto_bug_read_uint8(encoder, "id");
+        uint8_t rarity = proto_bug_read_uint8(encoder, "rarity");
+
+        EntityIdx e = rr_simulation_alloc_mob(
+            &this->simulation, client->player_info->arena,
+            client->player_info->camera_x, client->player_info->camera_y,
+            id, rarity, rr_simulation_team_id_mobs);
+        struct rr_component_mob *mob =
+            rr_simulation_get_mob(&this->simulation, e);
+        mob->no_drop = 0;
+        break;
+    }
+    default:
+        printf("<rr_server::unknown_header::0x%02x>\n", header);
+        break;
+    }
+}
+
+#ifndef RR_WORKER_MODE
 static int api_lws_callback(struct lws *ws, enum lws_callback_reasons reason,
                             void *user, void *packet, size_t size)
 {
@@ -838,6 +1318,14 @@ static int api_lws_callback(struct lws *ws, enum lws_callback_reasons reason,
     {
         puts("connected to api server");
         this->api_ws_ready = 1;
+#ifdef RR_WORKER_MODE
+        // In worker mode, set server alias from storage
+        rr_worker_storage_get_server_alias(this->server_alias, sizeof(this->server_alias));
+        if (strlen(this->server_alias) == 0)
+        {
+            strncpy(this->server_alias, "localhost", sizeof(this->server_alias) - 1);
+        }
+#else
         char *lobby_id =
 #ifdef RIVET_BUILD
             getenv("RIVET_LOBBY_ID");
@@ -850,6 +1338,7 @@ static int api_lws_callback(struct lws *ws, enum lws_callback_reasons reason,
         rr_binary_encoder_write_nt_string(&encoder, lobby_id);
         lws_write(this->api_client, encoder.start, encoder.at - encoder.start,
                   LWS_WRITE_BINARY);
+#endif
     }
     break;
     case LWS_CALLBACK_CLIENT_RECEIVE:
@@ -863,7 +1352,14 @@ static int api_lws_callback(struct lws *ws, enum lws_callback_reasons reason,
         {
         case 0:
         {
+#ifdef RR_WORKER_MODE
+            char alias[16];
+            rr_binary_encoder_read_nt_string(&decoder, alias);
+            rr_worker_storage_set_server_alias(alias);
+            strncpy(this->server_alias, alias, sizeof(this->server_alias) - 1);
+#else
             rr_binary_encoder_read_nt_string(&decoder, this->server_alias);
+#endif
             break;
         }
         case 1:
@@ -881,6 +1377,15 @@ static int api_lws_callback(struct lws *ws, enum lws_callback_reasons reason,
                 printf("<rr_api::client_nonexistent::%d>\n", pos);
                 break;
             }
+#ifdef RR_WORKER_MODE
+            if (!rr_worker_storage_load_account(client->rivet_account.uuid, client))
+            {
+                printf("<rr_server::account_failed_read::%s>\n",
+                       client->rivet_account.uuid);
+                client->pending_kick = 1;
+                break;
+            }
+#else
             if (!rr_server_client_read_from_api(client, &decoder))
             {
                 printf("<rr_server::account_failed_read::%s>\n",
@@ -888,6 +1393,7 @@ static int api_lws_callback(struct lws *ws, enum lws_callback_reasons reason,
                 client->pending_kick = 1;
                 break;
             }
+#endif
             client->verified = 1;
             struct proto_bug encoder;
             proto_bug_init(&encoder, outgoing_message);
@@ -942,7 +1448,9 @@ static int api_lws_callback(struct lws *ws, enum lws_callback_reasons reason,
     }
     return 0;
 }
+#endif // RR_WORKER_MODE
 
+#ifndef RR_WORKER_MODE
 static int lws_callback(struct lws *ws, enum lws_callback_reasons reason,
                         void *user, void *packet, size_t size)
 {
@@ -976,25 +1484,48 @@ void *thread_func(void *arg)
     }
     return 0;
 }
+#endif // RR_WORKER_MODE
 
+#ifndef RR_WORKER_MODE
 static void lws_log(int level, char const *log) { printf("%d %s", level, log); }
+#endif
 
+#ifdef RR_WORKER_MODE
+void server_tick_worker(struct rr_server *this)
+#else
 static void server_tick(struct rr_server *this)
+#endif
 {
+#ifdef RR_WORKER_MODE
+    // In worker mode, api_ws_ready is always true after init
+#else
     if (!this->api_ws_ready)
         return;
+#endif
+#ifdef RR_WORKER_MODE
+    rr_simulation_tick(&this->simulation, 0.0f); // delta not used by server
+#else
     rr_simulation_tick(&this->simulation);
+#endif
     for (uint64_t i = 0; i < RR_MAX_CLIENT_COUNT; ++i)
     {
         if (rr_bitset_get(this->clients_in_use, i))
         {
             struct rr_server_client *client = &this->clients[i];
             if (client->pending_kick)
+#ifndef RR_WORKER_MODE
                 lws_callback_on_writable(client->socket_handle);
+#endif
             if (client->ticks_to_next_squad_action > 0)
                 --client->ticks_to_next_squad_action;
             if (!client->verified || !client->in_squad)
+            {
+                if (!client->verified)
+                    printf("<rr_server::tick_skip::not_verified>\n");
+                if (!client->in_squad)
+                    printf("<rr_server::tick_skip::not_in_squad>\n");
                 continue;
+            }
             if (client->player_info != NULL)
             {
                 if (rr_simulation_entity_alive(&this->simulation,
@@ -1019,6 +1550,16 @@ static void server_tick(struct rr_server *this)
                     client->player_info->drops_this_tick_size = 0;
                 }
             }
+            // Send account data periodically to ensure client has latest inventory
+            // This fixes the inventory showing nothing issue
+            // Use a per-client counter (reuse message_length as counter when it's low)
+            static uint32_t account_send_counter = 0;
+            if (++account_send_counter >= 60) { // Send account every 60 ticks (~1 second at 60fps)
+                account_send_counter = 0;
+                extern void rr_server_client_write_account(struct rr_server_client *client);
+                rr_server_client_write_account(client);
+            }
+            
             rr_server_client_broadcast_update(client);
             if (!client->dev)
                 continue;
@@ -1067,6 +1608,19 @@ static void server_tick(struct rr_server *this)
 
 void rr_server_run(struct rr_server *this)
 {
+#ifdef RR_WORKER_MODE
+    // In worker mode, we don't use libwebsockets
+    // The server will be controlled via the worker interface
+    this->api_ws_ready = 1;
+    rr_worker_storage_get_server_alias(this->server_alias, sizeof(this->server_alias));
+    if (strlen(this->server_alias) == 0)
+    {
+        strncpy(this->server_alias, "localhost", sizeof(this->server_alias) - 1);
+    }
+    // The worker will call server_tick via the worker interface
+    // This function should not be called in worker mode
+    // Instead, use rr_server_worker_tick()
+#else
     {
         struct lws_context_creation_info info = {0};
 
@@ -1133,7 +1687,11 @@ void rr_server_run(struct rr_server *this)
         gettimeofday(&start, NULL);
         lws_service(this->server, -1);
         lws_service(this->api_client_context, -1);
+#ifdef RR_WORKER_MODE
+        server_tick_worker(this);
+#else
         server_tick(this);
+#endif
         this->simulation.animation_length = 0;
         gettimeofday(&end, NULL);
 
@@ -1145,4 +1703,5 @@ void rr_server_run(struct rr_server *this)
         if (to_sleep > 0)
             usleep(to_sleep);
     }
+#endif
 }

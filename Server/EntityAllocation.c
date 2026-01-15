@@ -278,6 +278,10 @@ EntityIdx rr_simulation_alloc_mob(struct rr_simulation *this,
     return entity;
 }
 
+#ifdef RR_WORKER_MODE
+// In worker mode, use the client's version which is already defined
+// This function is defined in Client/Simulation.c
+#else
 EntityIdx rr_simulation_alloc_entity(struct rr_simulation *this)
 {
     for (EntityIdx i = 1; i < RR_MAX_ENTITY_COUNT; i++)
@@ -294,6 +298,6 @@ EntityIdx rr_simulation_alloc_entity(struct rr_simulation *this)
             return i;
         }
     }
-
     RR_UNREACHABLE("ran out of entity ids");
 }
+#endif

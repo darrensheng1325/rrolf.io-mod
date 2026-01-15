@@ -577,13 +577,27 @@ void rr_game_websocket_on_event_function(enum rr_websocket_event_type type,
         if (!this->socket.recieved_first_packet)
         {
             this->socket.recieved_first_packet = 1;
+            // Debug: print first 16 bytes before decryption
+            uint8_t *data_bytes = (uint8_t *)data;
+            printf("<rr_client::received_first_packet::bytes=");
+            for (int i = 0; i < 16; i++) {
+                printf("%02x ", data_bytes[i]);
+            }
+            printf(">\n");
+            // Skip decryption in single-player mode
+            #ifndef SINGLE_PLAYER_BUILD
             rr_decrypt(data, 1024, 21094093777837637ull);
             rr_decrypt(data, 8, 1);
             rr_decrypt(data, 1024, 59731158950470853ull);
             rr_decrypt(data, 1024, 64709235936361169ull);
             rr_decrypt(data, 1024, 59013169977270713ull);
+            #endif
+            // Reinitialize encoder (no decryption needed in single-player)
+            proto_bug_init(&encoder, data);
+            proto_bug_set_bound(&encoder, data + size);
             uint64_t verification =
                 proto_bug_read_uint64(&encoder, "verification");
+            printf("<rr_client::read_verification::value=%llu>\n", (unsigned long long)verification);
             proto_bug_read_uint32(&encoder, "useless bytes");
             this->socket.clientbound_encryption_key =
                 proto_bug_read_uint64(&encoder, "c encryption key");
@@ -610,10 +624,17 @@ void rr_game_websocket_on_event_function(enum rr_websocket_event_type type,
             1; // signifies that the socket is verified on the serverside
         this->socket_pending = 0;
         // send instajoin
+        // Skip decryption in single-player mode
+        #ifndef SINGLE_PLAYER_BUILD
         this->socket.clientbound_encryption_key =
             rr_get_hash(this->socket.clientbound_encryption_key);
         rr_decrypt(data, size, this->socket.clientbound_encryption_key);
+        #endif
+        // Reinitialize encoder (no decryption needed in single-player)
+        proto_bug_init(&encoder, data);
+        proto_bug_set_bound(&encoder, data + size);
         uint8_t h = proto_bug_read_uint8(&encoder, "header");
+        printf("<rr_client::received_message::header=0x%02x::size=%llu>\n", h, (unsigned long long)size);
         switch (h)
         {
         case rr_clientbound_update:
@@ -1264,6 +1285,10 @@ void rr_game_connect_socket(struct rr_game *this)
 
 #ifdef RIVET_BUILD
     rr_rivet_lobbies_find(this, NULL);
+#elif defined(SINGLE_PLAYER_BUILD)
+    rr_websocket_init(&this->socket);
+    this->socket.user_data = this;
+    rr_websocket_connect_to(&this->socket, "worker://localhost");
 #else
     rr_websocket_init(&this->socket);
     this->socket.user_data = this;

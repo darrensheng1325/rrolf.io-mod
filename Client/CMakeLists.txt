@@ -15,6 +15,9 @@
 
 set(CMAKE_SYSTEM_NAME Generic)
 set(WASM_BUILD 1)
+set(CMAKE_CXX_COMPILER "em++")
+set(CMAKE_C_COMPILER "emcc")
+set(SINGLE_PLAYER_BUILD 1)
 
 cmake_minimum_required(VERSION 3.16)
 
@@ -104,7 +107,6 @@ set(SRCS
     InputData.c
     Main.c
     Mobile.c
-    Simulation.c
     Socket.c
     Storage.c
     ../Shared/Api.c
@@ -125,7 +127,6 @@ set(SRCS
     ../Shared/cJSON.c
     ../Shared/Crypto.c
     ../Shared/pb.c
-    ../Shared/Rivet.c
     ../Shared/SimulationCommon.c
     ../Shared/StaticData.c
     ../Shared/Utilities.c
@@ -148,7 +149,12 @@ endif()
 
 if (WASM_BUILD)
     set(CMAKE_C_COMPILER "emcc")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} --closure=0 -DWASM_BUILD -s INITIAL_MEMORY=33554432 -s NO_EXIT_RUNTIME=1 -s EXPORTED_FUNCTIONS=_malloc,_free,_rr_rivet_on_log_in,_rr_rivet_lobby_on_find,_rr_renderer_main_loop,_main,_rr_key_event,_rr_mouse_event,_rr_touch_event,_rr_wheel_event,_rr_paste_event,_rr_on_socket_event_emscripten,_rr_api_on_get_password")
+    if(SINGLE_PLAYER_BUILD)
+        # Export server functions for direct calling
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} --closure=0 -DWASM_BUILD -s INITIAL_MEMORY=33554432 -s NO_EXIT_RUNTIME=1 -s EXPORTED_FUNCTIONS=_malloc,_free,_rr_rivet_on_log_in,_rr_rivet_lobby_on_find,_rr_renderer_main_loop,_main,_rr_key_event,_rr_mouse_event,_rr_touch_event,_rr_wheel_event,_rr_paste_event,_rr_on_socket_event_emscripten,_rr_api_on_get_password,_rr_shared_memory_init,_rr_server_shared_init,_rr_server_shared_tick,_rr_client_shared_get_server_message,_rr_client_shared_send_message -s EXPORTED_RUNTIME_METHODS='[\"ccall\",\"cwrap\",\"UTF8ToString\",\"stringToUTF8\",\"HEAPU8\",\"HEAP32\",\"HEAPF64\",\"HEAPU32\"]' -s ALLOW_MEMORY_GROWTH=1 -s USE_PTHREADS=0 -gdwarf-4")
+    else()
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} --closure=0 -DWASM_BUILD -s INITIAL_MEMORY=33554432 -s NO_EXIT_RUNTIME=1 -s EXPORTED_FUNCTIONS=_malloc,_free,_rr_rivet_on_log_in,_rr_rivet_lobby_on_find,_rr_renderer_main_loop,_main,_rr_key_event,_rr_mouse_event,_rr_touch_event,_rr_wheel_event,_rr_paste_event,_rr_on_socket_event_emscripten,_rr_api_on_get_password")
+    endif()
     set(SRCS ${SRCS} Renderer/Wasm.c)
 else()
     set(SRCS ${SRCS} Renderer/Native.cc)
@@ -156,6 +162,51 @@ endif()
 
 if(RIVET_BUILD)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DRIVET_BUILD")
+    set(SRCS ${SRCS} ../Shared/Rivet.c)
+elseif(SINGLE_PLAYER_BUILD)
+    # In single-player mode, include Rivet.c for stubs even if RIVET_BUILD is not set
+    set(SRCS ${SRCS} ../Shared/Rivet.c)
+endif()
+
+if(SINGLE_PLAYER_BUILD)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DSINGLE_PLAYER_BUILD -DRR_WORKER_MODE=1 -DRR_SERVER=1")
+    # Add server source files to client build
+    # Include server's Simulation.c and EntityAllocation.c (they replace client versions)
+    set(SERVER_SRCS
+        ../Server/MobAi/Aggressive.c
+        ../Server/MobAi/Helpers.c
+        ../Server/MobAi/Neutral.c
+        ../Server/MobAi/Passive.c
+        ../Server/System/Ai.c
+        ../Server/System/Camera.c
+        ../Server/System/Centipede.c
+        ../Server/System/CollisionDetection.c
+        ../Server/System/CollisionResolution.c
+        ../Server/System/Drops.c
+        ../Server/System/Health.c
+        ../Server/System/PetalBehavior.c
+        ../Server/System/Velocity.c
+        ../Server/System/Web.c
+        ../Server/EntityAllocation.c
+        ../Server/EntityDetection.c
+        ../Server/Client.c
+        ../Server/Logs.c
+        ../Server/Server.c
+        ../Server/Simulation.c
+        ../Server/SpatialHash.c
+        ../Server/Squad.c
+        ../Server/UpdateProtocol.c
+        ../Server/Waves.c
+        ../Server/SharedMemory.c
+        ../Server/WorkerStorage.c
+    )
+    set(SRCS ${SRCS} ${SERVER_SRCS})
+    # Also include client's Simulation.c for client-specific functions
+    # (rr_simulation_read_binary, rr_deletion_simulation_tick, etc.)
+    set(SRCS ${SRCS} Simulation.c)
+else()
+    # In non-single-player mode, use client's Simulation.c
+    set(SRCS ${SRCS} Simulation.c)
 endif()
 
 add_executable(rrolf-client ${SRCS})
@@ -165,3 +216,5 @@ if(NOT WASM_BUILD)
 endif()
 
 target_link_libraries(rrolf-client m)
+
+# Server code is now compiled directly into the client, no separate build needed

@@ -34,6 +34,7 @@
 #define BASE_API_URL "http://localhost:55554/"
 #endif
 
+#ifndef EMSCRIPTEN
 #define RR_RIVET_CURL_PROLOGUE                                                 \
     struct curl_slist *list = 0;                                               \
     int err = 0;                                                               \
@@ -48,10 +49,15 @@
     assert(!err);                                                              \
     curl_easy_cleanup(curl);                                                   \
     curl_slist_free_all(list);
+#else
+#define RR_RIVET_CURL_PROLOGUE
+#define RR_RIVET_CURL_EPILOGUE
+#endif
 
 void rr_rivet_lobbies_ready(char const *lobby_token)
 {
 #ifdef RR_SERVER
+#ifndef EMSCRIPTEN
     RR_RIVET_CURL_PROLOGUE
     curl_easy_setopt(curl, CURLOPT_POST, 1);
     curl_easy_setopt(curl, CURLOPT_URL,
@@ -59,11 +65,13 @@ void rr_rivet_lobbies_ready(char const *lobby_token)
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, "{}");
     RR_RIVET_CURL_EPILOGUE
 #endif
+#endif
 }
 
 void rr_rivet_lobbies_set_closed(char const *lobby_token, int closed)
 {
 #ifdef RR_SERVER
+#ifndef EMSCRIPTEN
     cJSON *root = cJSON_CreateObject();
     cJSON_AddBoolToObject(root, "is_closed", closed);
     char *post_data = cJSON_Print(root);
@@ -78,12 +86,14 @@ void rr_rivet_lobbies_set_closed(char const *lobby_token, int closed)
     free(post_data);
     cJSON_Delete(root);
 #endif
+#endif
 }
 
 int rr_rivet_players_connected(char const *lobby_token,
                                char const *player_token)
 {
 #ifdef RR_SERVER
+#ifndef EMSCRIPTEN
     cJSON *root = cJSON_CreateObject();
     cJSON_AddStringToObject(root, "player_token", player_token);
     char *post_data = cJSON_Print(root);
@@ -104,14 +114,19 @@ int rr_rivet_players_connected(char const *lobby_token,
     curl_easy_cleanup(curl);
     curl_slist_free_all(list);
     return http_code == 200;
-#endif
+#else
     return 1;
+#endif
+#else
+    return 1;
+#endif
 }
 
 void rr_rivet_players_disconnected(char const *lobby_token,
                                    char const *player_token)
 {
 #ifdef RR_SERVER
+#ifndef EMSCRIPTEN
     cJSON *root = cJSON_CreateObject();
     cJSON_AddStringToObject(root, "player_token", player_token);
     char *post_data = cJSON_Print(root);
@@ -125,6 +140,7 @@ void rr_rivet_players_disconnected(char const *lobby_token,
 
     free(post_data);
     cJSON_Delete(root);
+#endif
 #endif
 }
 
@@ -216,6 +232,16 @@ void rr_rivet_lobbies_join(void *captures, char const *lobby_id)
 #endif
 }
 
+#ifdef SINGLE_PLAYER_BUILD
+// In single-player mode, stub out Rivet functions
+void rr_rivet_link_account(char *game_user, char *api_password, void *captures)
+{
+    (void)game_user;
+    (void)api_password;
+    (void)captures;
+    // No-op in single-player mode
+}
+#else
 void rr_rivet_link_account(char *game_user, char *api_password, void *captures)
 {
     puts("<rr_rivet::account_link>");
@@ -284,7 +310,18 @@ void rr_rivet_link_account(char *game_user, char *api_password, void *captures)
     // clang-format on
 #endif
 }
+#endif
 
+#ifdef SINGLE_PLAYER_BUILD
+// In single-player mode, create a dummy guest identity
+void rr_rivet_identities_create_guest(void *captures)
+{
+    puts("<rr_rivet::attempt_login::single_player>");
+    // Use a fixed UUID for single-player mode
+    rr_rivet_on_log_in("single-player-token", "", "Single Player", "0000",
+                       "b5f62776-ef1c-472d-8ccd-b329edee545b", 1, captures);
+}
+#else
 void rr_rivet_identities_create_guest(void *captures)
 {
     puts("<rr_rivet::attempt_login>");
@@ -369,3 +406,4 @@ void rr_rivet_identities_create_guest(void *captures)
 // clang-format on
 #endif
 }
+#endif

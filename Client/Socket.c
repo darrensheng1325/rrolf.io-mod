@@ -83,6 +83,55 @@ void rr_websocket_connect_to(struct rr_websocket *this, char const *link)
     puts("<rr_websocket::server_connect>");
     this->recieved_first_packet = 0;
 #ifdef EMSCRIPTEN
+#ifdef SINGLE_PLAYER_BUILD
+    EM_ASM(
+        {
+            // Allocate shared memory structure in WASM heap
+            // Since client and server are in the same WASM module, we can use regular WASM memory
+            const SHARED_MEMORY_SIZE = 1024 * 1024 * 4; // 4MB
+            const sharedMemPtr = Module._malloc(SHARED_MEMORY_SIZE);
+            
+            // Call C function to initialize shared memory
+            Module._rr_shared_memory_init(sharedMemPtr);
+            
+            // Initialize server
+            Module._rr_server_shared_init();
+            
+            // Store references
+            Module.serverSharedMemPtr = sharedMemPtr;
+            Module.serverSocket = $0;
+            Module.serverIncomingData = $2;
+            
+            // Start server tick loop (runs at 60Hz)
+            Module.serverTickInterval = setInterval(function() {
+                if (Module.serverSharedMemPtr) {
+                    Module._rr_server_shared_tick();
+                    
+                    // Poll for messages from server
+                    const messageBuffer = new Uint8Array(65536);
+                    const messagePtr = Module._malloc(65536);
+                    const size = Module.ccall('rr_client_shared_get_server_message', 
+                        'number', 
+                        ['number', 'number'], 
+                        [messagePtr, 65536]);
+                    
+                    if (size > 0) {
+                        const messageData = new Uint8Array(Module.HEAPU8.buffer, messagePtr, size);
+                        HEAPU8.set(messageData, $2);
+                        _rr_on_socket_event_emscripten($0, 2, $2, BigInt(size));
+                    }
+                    
+                    Module._free(messagePtr);
+                }
+            }, 1000 / 60); // 60Hz
+            
+            // Simulate connection open
+            setTimeout(function() {
+                _rr_on_socket_event_emscripten($0, 0, 0, 0n);
+            }, 100);
+        },
+        this, link, incoming_data);
+#else
     EM_ASM(
         {
             let string = UTF8ToString($1);
@@ -108,6 +157,7 @@ void rr_websocket_connect_to(struct rr_websocket *this, char const *link)
             })();
         },
         this, link, incoming_data);
+#endif
 #else
     struct lws_context_creation_info info;
     struct lws_protocols protocols[2] = {{"g", rr_on_socket_event_lws, 0, 0},
@@ -141,10 +191,23 @@ void rr_websocket_connect_to(struct rr_websocket *this, char const *link)
 void rr_websocket_disconnect(struct rr_websocket *this, struct rr_game *game)
 {
 #ifdef EMSCRIPTEN
+#ifdef SINGLE_PLAYER_BUILD
+    EM_ASM({
+        if (Module.serverTickInterval) {
+            clearInterval(Module.serverTickInterval);
+            Module.serverTickInterval = null;
+        }
+        if (Module.serverSharedMemPtr) {
+            Module._free(Module.serverSharedMemPtr);
+            Module.serverSharedMemPtr = null;
+        }
+    });
+#else
     EM_ASM({
         if (Module.socket)
             Module.socket.close();
     });
+#endif
 #else
 #endif
     game->socket_ready = 0;
@@ -165,14 +228,48 @@ void rr_websocket_queue_send(struct rr_websocket *this, uint32_t length)
 
 void rr_websocket_send(struct rr_websocket *this, uint32_t length)
 {
+    // Debug: print first 16 bytes before encryption (for first packet only)
+    static int first_send = 1;
+    if (first_send) {
+        printf("<rr_client::before_encrypt::bytes=");
+        for (int i = 0; i < 16 && i < length; i++) {
+            printf("%02x ", RR_OUTGOING_PACKET[i]);
+        }
+        printf("::key=%llu>\n", (unsigned long long)this->serverbound_encryption_key);
+        first_send = 0;
+    }
+    // Skip encryption in single-player mode
+    #ifndef SINGLE_PLAYER_BUILD
     rr_encrypt(RR_OUTGOING_PACKET, length, this->serverbound_encryption_key);
     this->serverbound_encryption_key =
         rr_get_hash(rr_get_hash(this->serverbound_encryption_key));
+    #endif
+    // Debug: print first 16 bytes after encryption (for first packet only)
+    if (!first_send && length > 0) {
+        printf("<rr_client::after_encrypt::bytes=");
+        for (int i = 0; i < 16 && i < length; i++) {
+            printf("%02x ", RR_OUTGOING_PACKET[i]);
+        }
+        printf(">\n");
+        first_send = 1; // Reset for next first packet
+    }
 #ifndef EMSCRIPTEN
     lws_write(this->socket, RR_OUTGOING_PACKET, length, LWS_WRITE_BINARY);
 #else
+#ifdef SINGLE_PLAYER_BUILD
+    EM_ASM({
+        if (Module.serverSharedMemPtr && Module.serverSocket === $2) {
+            // Send message via shared memory
+            Module.ccall('rr_client_shared_send_message', 
+                'void', 
+                ['number', 'number'], 
+                [$0, $1]);
+        }
+    }, RR_OUTGOING_PACKET, length, this);
+#else
     EM_ASM({ Module.socket.send(HEAPU8.subarray($0, $0 + $1)); },
            RR_OUTGOING_PACKET, length);
+#endif
 #endif
 }
 
@@ -182,16 +279,31 @@ void rr_websocket_send_all(struct rr_websocket *this)
         return;
     for (uint32_t i = 0; i < at; ++i)
     {
+        // Skip encryption in single-player mode
+        #ifndef SINGLE_PLAYER_BUILD
         rr_encrypt(outputs[i], packet_lengths[i],
                    this->serverbound_encryption_key);
         this->serverbound_encryption_key =
             rr_get_hash(rr_get_hash(this->serverbound_encryption_key));
+        #endif
 #ifndef EMSCRIPTEN
         lws_write(this->socket, outputs[i], packet_lengths[i],
                   LWS_WRITE_BINARY);
 #else
+#ifdef SINGLE_PLAYER_BUILD
+        EM_ASM({
+            if (Module.serverSharedMemPtr && Module.serverSocket === $2) {
+                // Send message via shared memory
+                Module.ccall('rr_client_shared_send_message', 
+                    'void', 
+                    ['number', 'number'], 
+                    [$0, $1]);
+            }
+        }, outputs[i], packet_lengths[i], this);
+#else
         EM_ASM({ Module.socket.send(HEAPU8.subarray($0, $0 + $1)); },
                outputs[i], packet_lengths[i]);
+#endif
 #endif
         free(outputs[i]);
     }
