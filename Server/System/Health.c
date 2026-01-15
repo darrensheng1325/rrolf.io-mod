@@ -251,7 +251,15 @@ static void system_for_each_function(EntityIdx entity, void *_captures)
     captures.health = health;
     captures.simulation = this;
 
-    for (uint32_t i = 0; i < physical->colliding_with_size; ++i)
+    // Safety check to prevent infinite loops from corrupted colliding_with_size
+    uint32_t colliding_size = physical->colliding_with_size;
+    if (colliding_size > RR_MAX_COLLISION_COUNT)
+    {
+        printf("<rr_system::health::colliding_with_size_corrupted::size=%u::clamping>\n",
+               (unsigned)colliding_size);
+        colliding_size = RR_MAX_COLLISION_COUNT;
+    }
+    for (uint32_t i = 0; i < colliding_size; ++i)
         colliding_with_function(physical->colliding_with[i], &captures);
 }
 

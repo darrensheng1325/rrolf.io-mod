@@ -107,21 +107,29 @@ void rr_websocket_connect_to(struct rr_websocket *this, char const *link)
                 if (Module.serverSharedMemPtr) {
                     Module._rr_server_shared_tick();
                     
-                    // Poll for messages from server
-                    const messageBuffer = new Uint8Array(65536);
-                    const messagePtr = Module._malloc(65536);
-                    const size = Module.ccall('rr_client_shared_get_server_message', 
-                        'number', 
-                        ['number', 'number'], 
-                        [messagePtr, 65536]);
-                    
-                    if (size > 0) {
-                        const messageData = new Uint8Array(Module.HEAPU8.buffer, messagePtr, size);
-                        HEAPU8.set(messageData, $2);
-                        _rr_on_socket_event_emscripten($0, 2, $2, BigInt(size));
+                    // Poll for messages from server - try multiple times per tick to catch all messages
+                    let messagesReceived = 0;
+                    const maxMessagesPerTick = 10; // Prevent infinite loop
+                    while (messagesReceived < maxMessagesPerTick) {
+                        const messagePtr = Module._malloc(65536);
+                        const size = Module.ccall('rr_client_shared_get_server_message', 
+                            'number', 
+                            ['number', 'number'], 
+                            [messagePtr, 65536]);
+                        
+                        if (size > 0) {
+                            console.log('[Client] Received message from server, size:', size, 'header:', Module.HEAPU8[messagePtr]);
+                            const messageData = new Uint8Array(Module.HEAPU8.buffer, messagePtr, size);
+                            HEAPU8.set(messageData, $2);
+                            _rr_on_socket_event_emscripten($0, 2, $2, BigInt(size));
+                            messagesReceived++;
+                        } else {
+                            Module._free(messagePtr);
+                            break; // No more messages
+                        }
+                        
+                        Module._free(messagePtr);
                     }
-                    
-                    Module._free(messagePtr);
                 }
             }, 1000 / 60); // 60Hz
             

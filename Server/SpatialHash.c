@@ -35,6 +35,10 @@ void rr_spatial_hash_init(struct rr_spatial_hash *this,
 
 void rr_spatial_hash_insert(struct rr_spatial_hash *this, EntityIdx entity)
 {
+    // Safety check: ensure spatial hash is initialized
+    if (this == NULL || this->cells == NULL || this->size == 0)
+        return;
+    
     struct rr_component_physical *physical =
         rr_simulation_get_physical(this->simulation, entity);
 
@@ -47,7 +51,18 @@ void rr_spatial_hash_insert(struct rr_spatial_hash *this, EntityIdx entity)
         rr_fclamp(physical->y, physical->radius,
                   this->size * SPATIAL_HASH_GRID_SIZE - physical->radius) /
         SPATIAL_HASH_GRID_SIZE;
+    
+    // Bounds check
+    if (x >= this->size || y >= this->size)
+        return;
+    
     struct rr_spatial_hash_cell *cell = spatial_hash_get(x, y);
+    if (cell == NULL)
+        return;
+    
+    if (cell->entities_in_use >= RR_SPATIAL_HASH_CELL_MAX_ENTITY_COUNT)
+        return; // Cell is full
+    
     cell->entities[cell->entities_in_use++] = entity;
 }
 
@@ -57,6 +72,10 @@ void rr_spatial_hash_query(struct rr_spatial_hash *this, float fx, float fy,
                            float fw, float fh, void *user_captures,
                            void (*cb)(EntityIdx, void *))
 {
+    // Safety check: ensure spatial hash is initialized
+    if (this == NULL || this->cells == NULL || this->size == 0)
+        return;
+    
     float x = fmaxf(fx - fw, 0);
     float y = fmaxf(fy - fh, 0);
     // should not take in an entity id like insert does. the reason is so stuff
@@ -77,10 +96,19 @@ void rr_spatial_hash_query(struct rr_spatial_hash *this, float fx, float fy,
         rr_fclamp((fy + fh + SPATIAL_HASH_GRID_SIZE) / SPATIAL_HASH_GRID_SIZE,
                   0, this->size - 1);
 
+    // Additional bounds check
+    if (e_x >= this->size || e_y >= this->size)
+        return;
+
     for (uint32_t y = s_y; y <= e_y; y++)
         for (uint32_t x = s_x; x <= e_x; x++)
         {
+            // Final bounds check before accessing
+            if (x >= this->size || y >= this->size)
+                continue;
             struct rr_spatial_hash_cell *cell = spatial_hash_get(x, y);
+            if (cell == NULL)
+                continue;
             for (uint64_t i = 0; i < cell->entities_in_use; i++)
                 cb(cell->entities[i], user_captures);
         }

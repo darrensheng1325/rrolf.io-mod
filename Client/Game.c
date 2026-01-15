@@ -635,6 +635,10 @@ void rr_game_websocket_on_event_function(enum rr_websocket_event_type type,
         proto_bug_set_bound(&encoder, data + size);
         uint8_t h = proto_bug_read_uint8(&encoder, "header");
         printf("<rr_client::received_message::header=0x%02x::size=%llu>\n", h, (unsigned long long)size);
+        if (h == rr_clientbound_update)
+        {
+            printf("<rr_client::received_update_message::processing>\n");
+        }
         switch (h)
         {
         case rr_clientbound_update:
@@ -671,15 +675,31 @@ void rr_game_websocket_on_event_function(enum rr_websocket_event_type type,
                                   "squad code");
             this->is_dev =
                 this->squad.squad_members[this->squad.squad_pos].is_dev;
-            if (proto_bug_read_uint8(&encoder, "in game") == 1)
+            uint8_t in_game = proto_bug_read_uint8(&encoder, "in game");
+            printf("<rr_client::update_message::in_game=%u::simulation_ready=%u>\n", 
+                   (unsigned)in_game, (unsigned)this->simulation_ready);
+            if (in_game == 1)
             {
                 if (!this->simulation_ready)
                 {
+                    printf("<rr_client::update_message::initializing_simulation>\n");
                     rr_simulation_init(this->simulation);
+#ifdef SINGLE_PLAYER_BUILD
+                    // Initialize arena for client simulation (needed for rendering)
+                    extern void rr_simulation_init_client_arena(struct rr_simulation *);
+                    rr_simulation_init_client_arena(this->simulation);
+#endif
                     rr_simulation_init(this->deletion_simulation);
                     this->simulation_ready = 1;
                 }
+                printf("<rr_client::update_message::reading_simulation_binary>\n");
                 rr_simulation_read_binary(this, &encoder);
+                printf("<rr_client::update_message::simulation_ready_set::player_info=%p>\n", 
+                       (void*)this->player_info);
+                if (this->player_info == NULL)
+                {
+                    printf("<rr_client::update_message::WARNING_player_info_is_null>\n");
+                }
             }
             else
             {
@@ -1006,13 +1026,43 @@ void rr_game_tick(struct rr_game *this, float delta)
 
     if (this->simulation_ready)
     {
+#ifdef SINGLE_PLAYER_BUILD
+        // Ensure arena has maze pointer set before tick (needed for tick_maze)
+        // This is a safety check in case the maze pointer was lost
+        if (this->simulation->arena_count > 0)
+        {
+            for (EntityIdx i = 0; i < this->simulation->arena_count; ++i)
+            {
+                EntityIdx arena_id = this->simulation->arena_vector[i];
+                struct rr_component_arena *arena = rr_simulation_get_arena(this->simulation, arena_id);
+                if (arena && (arena->maze == NULL || arena->biome != rr_biome_id_hell_creek))
+                {
+                    extern struct rr_maze_declaration RR_MAZES[];
+                    arena->maze = &RR_MAZES[rr_biome_id_hell_creek];
+                    arena->biome = rr_biome_id_hell_creek;
+                }
+            }
+        }
+#endif
         rr_simulation_tick(this->simulation, this->lerp_delta);
+#ifdef SINGLE_PLAYER_BUILD
+        // In single-player mode, the server's tick doesn't call interpolation,
+        // so we need to call it separately for the client's rendering
+        extern void rr_system_interpolation_tick(struct rr_simulation *, float);
+        rr_simulation_create_component_vectors(this->simulation);
+        rr_system_interpolation_tick(this->simulation, this->lerp_delta);
+#endif
         rr_deletion_simulation_tick(this->deletion_simulation,
                                     this->lerp_delta);
 
         this->renderer->state.filter.amount = 0;
         struct rr_renderer_context_state state1;
         struct rr_renderer_context_state state2;
+        if (this->player_info == NULL)
+        {
+            printf("<rr_client::tick::player_info_is_null::simulation_ready=%u>\n", 
+                   (unsigned)this->simulation_ready);
+        }
         if (this->player_info != NULL)
         {
             player_info_finder(this);

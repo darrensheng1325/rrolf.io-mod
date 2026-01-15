@@ -51,6 +51,33 @@ void rr_server_shared_init(void)
     rr_server_init(g_server);
     g_server->api_ws_ready = 1;
     
+    // Initialize client slot 0 for single-player mode
+    extern void rr_server_client_init(struct rr_server_client *client);
+    rr_bitset_set(g_server->clients_in_use, 0);
+    rr_server_client_init(&g_server->clients[0]);
+    g_server->clients[0].server = g_server;
+    g_server->clients[0].in_use = 1;
+    
+    // Send initial packet with verification keys (like LWS_CALLBACK_ESTABLISHED does)
+    extern uint8_t *outgoing_message;
+    struct proto_bug encryption_key_encoder;
+    proto_bug_init(&encryption_key_encoder, outgoing_message);
+    proto_bug_write_uint64(&encryption_key_encoder,
+                           g_server->clients[0].requested_verification,
+                           "verification");
+    proto_bug_write_uint32(&encryption_key_encoder, rr_get_rand(),
+                           "useless bytes");
+    proto_bug_write_uint64(&encryption_key_encoder,
+                           g_server->clients[0].clientbound_encryption_key,
+                           "c encryption key");
+    proto_bug_write_uint64(&encryption_key_encoder,
+                           g_server->clients[0].serverbound_encryption_key,
+                           "s encryption key");
+    rr_server_shared_send_message(encryption_key_encoder.start,
+                                  encryption_key_encoder.current - encryption_key_encoder.start);
+    printf("<rr_server::shared_init::sent_initial_packet::verification=%llu>\n",
+           (unsigned long long)g_server->clients[0].requested_verification);
+    
     if (g_shared_mem)
         g_shared_mem->server_initialized = 1;
 }
@@ -123,16 +150,6 @@ void rr_server_shared_tick(void)
                 client->verified = 1;
                 printf("<rr_server::account_loaded::verified=1>\n");
                 
-                // In single-player mode, automatically join client to a squad
-                extern uint8_t rr_client_create_squad(struct rr_server *server, struct rr_server_client *client);
-                extern uint8_t rr_client_join_squad(struct rr_server *server, struct rr_server_client *client, uint8_t pos);
-                uint8_t squad = rr_client_create_squad(g_server, client);
-                if (squad != 0xFF) // 0xFF is RR_ERROR_CODE_INVALID_SQUAD
-                {
-                    rr_client_join_squad(g_server, client, squad);
-                    printf("<rr_server::auto_joined_squad::squad=%u>\n", squad);
-                }
-                
                 // Send encryption keys response (no encryption in single-player)
                 struct proto_bug response_encoder;
                 proto_bug_init(&response_encoder, outgoing_message);
@@ -146,9 +163,16 @@ void rr_server_shared_tick(void)
                 extern void rr_server_client_write_account(struct rr_server_client *client);
                 rr_server_client_write_account(client);
                 
-                // Send initial update message to enable buttons
-                if (client->in_squad)
+                // Send initial update message to enable buttons (even without being in a squad)
+                // Create a temporary squad entry for the client so the update message works
+                extern uint8_t rr_client_create_squad(struct rr_server *server, struct rr_server_client *client);
+                extern uint8_t rr_client_join_squad(struct rr_server *server, struct rr_server_client *client, uint8_t pos);
+                uint8_t squad = rr_client_create_squad(g_server, client);
+                if (squad != 0xFF) // 0xFF is RR_ERROR_CODE_INVALID_SQUAD
                 {
+                    rr_client_join_squad(g_server, client, squad);
+                    printf("<rr_server::auto_joined_squad::squad=%u>\n", squad);
+                    // Don't set playing=1 yet - wait for "Enter Game" button
                     extern void rr_server_client_broadcast_update(struct rr_server_client *client);
                     rr_server_client_broadcast_update(client);
                     printf("<rr_server::sent_initial_update>\n");
@@ -227,8 +251,16 @@ uint32_t rr_server_shared_get_client_message(uint8_t *buffer, uint32_t max_size)
 
 void rr_server_shared_send_message(uint8_t *data, uint32_t size)
 {
-    if (g_shared_mem == NULL || data == NULL || size == 0)
+    if (g_shared_mem == NULL)
+    {
+        printf("<rr_server::shared_send::g_shared_mem_is_null>\n");
         return;
+    }
+    if (data == NULL || size == 0)
+    {
+        printf("<rr_server::shared_send::invalid_params::data=%p::size=%u>\n", (void*)data, (unsigned)size);
+        return;
+    }
     
     uint32_t write_pos = g_shared_mem->server_to_client_write_pos;
     uint32_t read_pos = g_shared_mem->server_to_client_read_pos;
@@ -240,7 +272,8 @@ void rr_server_shared_send_message(uint8_t *data, uint32_t size)
     
     if (size + 4 > available)
     {
-        printf("<rr_server::shared_memory_full::dropping_message>\n");
+        printf("<rr_server::shared_memory_full::dropping_message::size=%u::available=%u::write_pos=%u::read_pos=%u>\n", 
+               (unsigned)size, (unsigned)available, (unsigned)write_pos, (unsigned)read_pos);
         return; // Buffer full, drop message
     }
     
@@ -263,11 +296,23 @@ void rr_server_shared_send_message(uint8_t *data, uint32_t size)
     }
     
     g_shared_mem->server_to_client_write_pos = write_pos;
+    printf("<rr_server::shared_send::message_written::size=%u::write_pos=%u::read_pos=%u>\n", 
+           (unsigned)size, (unsigned)write_pos, (unsigned)read_pos);
 }
 
 uint32_t rr_client_shared_get_server_message(uint8_t *buffer, uint32_t max_size)
 {
-    if (g_shared_mem == NULL || buffer == NULL || max_size == 0)
+    if (g_shared_mem == NULL)
+    {
+        static int warned = 0;
+        if (!warned)
+        {
+            printf("<rr_client::shared_get::g_shared_mem_is_null>\n");
+            warned = 1;
+        }
+        return 0;
+    }
+    if (buffer == NULL || max_size == 0)
         return 0;
     
     uint32_t read_pos = g_shared_mem->server_to_client_read_pos;
@@ -283,6 +328,8 @@ uint32_t rr_client_shared_get_server_message(uint8_t *buffer, uint32_t max_size)
     
     if (message_size > max_size || message_size == 0)
     {
+        printf("<rr_client::shared_get::invalid_message_size::size=%u::max=%u>\n", 
+               (unsigned)message_size, (unsigned)max_size);
         // Skip invalid message
         g_shared_mem->server_to_client_read_pos = (read_pos + message_size) % (sizeof(g_shared_mem->server_to_client_buffer));
         return 0;
@@ -304,6 +351,8 @@ uint32_t rr_client_shared_get_server_message(uint8_t *buffer, uint32_t max_size)
     }
     
     g_shared_mem->server_to_client_read_pos = read_pos;
+    printf("<rr_client::shared_get::message_read::size=%u::read_pos=%u::write_pos=%u>\n", 
+           (unsigned)message_size, (unsigned)read_pos, (unsigned)write_pos);
     return message_size;
 }
 

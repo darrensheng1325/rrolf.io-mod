@@ -227,7 +227,10 @@ void rr_server_client_broadcast_update(struct rr_server_client *this)
     char joined_code[16];
     sprintf(joined_code, "%s-%s", server->server_alias, squad->squad_code);
     proto_bug_write_string(&encoder, joined_code, 16, "squad code");
-    proto_bug_write_uint8(&encoder, this->player_info != NULL, "in game");
+    uint8_t in_game = this->player_info != NULL;
+    proto_bug_write_uint8(&encoder, in_game, "in game");
+    printf("<rr_server::broadcast_update::player_info=%p::in_game=%u>\n", 
+           (void*)this->player_info, (unsigned)in_game);
     if (this->player_info != NULL)
         rr_simulation_write_binary(&server->simulation, &encoder,
                                    this->player_info);
@@ -235,7 +238,11 @@ void rr_server_client_broadcast_update(struct rr_server_client *this)
     uint32_t update_size = encoder.current - encoder.start;
     uint8_t *update_copy = malloc(update_size);
     memcpy(update_copy, encoder.start, update_size);
+    printf("<rr_server::broadcast_update::sending_message::size=%u::about_to_call_write_message>\n", (unsigned)update_size);
+    fflush(stdout); // Force flush to ensure log appears
     rr_server_client_write_message(this, update_copy, update_size);
+    printf("<rr_server::broadcast_update::write_message_returned>\n");
+    fflush(stdout);
     free(update_copy);
     
     // Use a fresh encoder for the animation update to avoid buffer corruption
@@ -1034,8 +1041,13 @@ void server_handle_client_message(struct rr_server *this, struct rr_server_clien
     case rr_serverbound_squad_ready:
     {
         printf("<rr_server::squad_ready_received>\n");
+        // Rate limiting: prevent rapid clicks from causing issues
+        // Set rate limit FIRST to prevent multiple messages in same tick from all processing
         if (client->ticks_to_next_squad_action > 0)
+        {
+            printf("<rr_server::squad_ready::rate_limited::ticks_remaining=%u>\n", client->ticks_to_next_squad_action);
             break;
+        }
         client->ticks_to_next_squad_action = 10;
         if (!client->in_squad)
         {
@@ -1062,13 +1074,37 @@ void server_handle_client_message(struct rr_server *this, struct rr_server_clien
             // Immediately create player info and flower for single-player mode
             if (client->in_squad && rr_squad_get_client_slot(this, client)->playing == 0)
             {
-                printf("<rr_server::squad_ready::creating_player>\n");
-                rr_squad_get_client_slot(this, client)->playing = 1;
-                rr_server_client_create_player_info(this, client);
-                rr_server_client_create_flower(client);
-                printf("<rr_server::squad_ready::player_created::player_info=%p::flower_id=%u>\n",
-                       (void*)client->player_info, 
-                       client->player_info ? client->player_info->flower_id : 0);
+                // Check if player_info already exists (prevent duplicate creation)
+                if (client->player_info != NULL)
+                {
+                    printf("<rr_server::squad_ready::player_already_exists::skipping_creation>\n");
+                    rr_squad_get_client_slot(this, client)->playing = 1;
+                    // Still send update message
+                    extern void rr_server_client_broadcast_update(struct rr_server_client *client);
+                    rr_server_client_broadcast_update(client);
+                }
+                else
+                {
+                    printf("<rr_server::squad_ready::creating_player>\n");
+                    rr_squad_get_client_slot(this, client)->playing = 1;
+                    rr_server_client_create_player_info(this, client);
+                    if (client->player_info != NULL)
+                    {
+                        rr_server_client_create_flower(client);
+                        printf("<rr_server::squad_ready::player_created::player_info=%p::flower_id=%u>\n",
+                               (void*)client->player_info, 
+                               client->player_info ? client->player_info->flower_id : 0);
+                        // Send update message to client so it knows the game has started
+                        extern void rr_server_client_broadcast_update(struct rr_server_client *client);
+                        rr_server_client_broadcast_update(client);
+                        printf("<rr_server::squad_ready::sent_update_message>\n");
+                    }
+                    else
+                    {
+                        printf("<rr_server::squad_ready::failed_to_create_player_info>\n");
+                        rr_squad_get_client_slot(this, client)->playing = 0;
+                    }
+                }
             }
             #else
             uint8_t squad = rr_client_find_squad(this, client);
@@ -1106,26 +1142,47 @@ void server_handle_client_message(struct rr_server *this, struct rr_server_clien
         {
             if (rr_squad_get_client_slot(this, client)->playing == 0)
             {
+                // Player is entering the game - create player info and flower
+                // Check if player_info already exists (prevent duplicate creation from rapid clicks)
                 if (client->player_info != NULL)
                 {
-                    rr_simulation_request_entity_deletion(
-                        &this->simulation, client->player_info->parent_id);
-                    client->player_info = NULL;
+                    // Player info already exists, just mark as playing
+                    printf("<rr_server::squad_ready::player_already_exists::skipping_creation>\n");
+                    rr_squad_get_client_slot(this, client)->playing = 1;
+                    break;
                 }
                 rr_squad_get_client_slot(this, client)->playing = 1;
+                printf("<rr_server::squad_ready::creating_player>\n");
                 rr_server_client_create_player_info(this, client);
+                if (client->player_info == NULL)
+                {
+                    printf("<rr_server::squad_ready::failed_to_create_player_info>\n");
+                    rr_squad_get_client_slot(this, client)->playing = 0; // Reset playing flag on failure
+                    break; // Exit early if player creation failed
+                }
                 rr_server_client_create_flower(client);
+                printf("<rr_server::squad_ready::player_created::player_info=%p::flower_id=%u>\n",
+                       (void*)client->player_info, 
+                       client->player_info ? client->player_info->flower_id : 0);
+                
+                // Send update message to client so it knows the game has started
+                extern void rr_server_client_broadcast_update(struct rr_server_client *client);
+                rr_server_client_broadcast_update(client);
+                printf("<rr_server::squad_ready::sent_update_message>\n");
             }
             else
             {
+                // Player is already playing - toggle them out of the game
                 if (client->player_info != NULL)
                 {
                     if (rr_simulation_entity_alive(
                             &this->simulation,
                             client->player_info->flower_id))
+                    {
                         rr_simulation_request_entity_deletion(
                             &this->simulation,
                             client->player_info->flower_id);
+                    }
                     else
                     {
                         rr_simulation_request_entity_deletion(

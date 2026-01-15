@@ -107,20 +107,29 @@ void rr_server_client_create_flower(struct rr_server_client *this)
 void rr_server_client_write_message(struct rr_server_client *this,
                                     uint8_t *data, uint64_t size)
 {
-    if (this->message_length++ >= 512)
-    {
-        this->pending_kick = 1;
-#ifndef RR_WORKER_MODE
-        lws_callback_on_writable(this->socket_handle);
-#endif
-        return;
-    }
-    
 #ifdef RR_WORKER_MODE
     // In worker mode, use shared memory instead of message queue
+    // No need to track message_length since we're not queuing messages
     extern void rr_server_shared_send_message(uint8_t *data, uint32_t size);
+    printf("<rr_server::client_write_message::calling_shared_send::size=%llu>\n", (unsigned long long)size);
+    fflush(stdout);
     rr_server_shared_send_message(data, (uint32_t)size);
+    printf("<rr_server::client_write_message::shared_send_returned>\n");
+    fflush(stdout);
     return;
+#else
+    printf("<rr_server::client_write_message::called::size=%llu::message_length=%u>\n", 
+           (unsigned long long)size, (unsigned)this->message_length);
+    fflush(stdout);
+    
+    if (this->message_length++ >= 512)
+    {
+        printf("<rr_server::client_write_message::message_limit_exceeded>\n");
+        fflush(stdout);
+        this->pending_kick = 1;
+        lws_callback_on_writable(this->socket_handle);
+        return;
+    }
 #endif
     
     // Allocate message and copy data BEFORE encryption to avoid corrupting the source buffer

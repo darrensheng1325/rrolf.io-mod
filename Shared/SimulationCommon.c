@@ -67,13 +67,34 @@ void rr_simulation_create_component_vectors(struct rr_simulation *this)
 #define XX(COMPONENT, ID) this->COMPONENT##_count = 0;
     RR_FOR_EACH_COMPONENT;
 #undef XX
+    
+    // Clamp any corrupted counts before rebuilding vectors
+#define XX(COMPONENT, ID)                                                      \
+    if (this->COMPONENT##_count > RR_MAX_ENTITY_COUNT)                         \
+    {                                                                          \
+        printf("<rr_simulation::create_vectors::count_corrupted::" #COMPONENT "::count=%u::resetting>\n", \
+               (unsigned)this->COMPONENT##_count);                             \
+        this->COMPONENT##_count = 0;                                          \
+    }
+    RR_FOR_EACH_COMPONENT;
+#undef XX
+    
     for (EntityIdx entity = 1; entity < RR_MAX_ENTITY_COUNT; ++entity)
     {
         if (!(this->entity_tracker[entity] & 1))
             continue;
 #define XX(COMPONENT, ID)                                                      \
     if (this->entity_tracker[entity] & (1 << ID))                              \
-        this->COMPONENT##_vector[this->COMPONENT##_count++] = entity;
+    {                                                                          \
+        if (this->COMPONENT##_count >= RR_MAX_ENTITY_COUNT)                    \
+        {                                                                      \
+            printf("<rr_simulation::component_vector_overflow::" #COMPONENT "::count=%u::entity=%u::stopping>\n", \
+                   (unsigned)this->COMPONENT##_count, (unsigned)entity);      \
+            /* Stop processing this component type to prevent infinite loops */ \
+            continue;                                                          \
+        }                                                                      \
+        this->COMPONENT##_vector[this->COMPONENT##_count++] = entity;          \
+    }
         RR_FOR_EACH_COMPONENT;
 #undef XX
     }
@@ -94,8 +115,32 @@ void rr_simulation_for_each_entity(struct rr_simulation *this,
                                             void *user_captures,               \
                                             void (*cb)(EntityIdx, void *))     \
     {                                                                          \
-        for (EntityIdx pos = 0; pos < this->COMPONENT##_count; ++pos)          \
+        EntityIdx count = this->COMPONENT##_count;                            \
+        if (count > RR_MAX_ENTITY_COUNT)                                        \
+        {                                                                      \
+            printf("<rr_simulation::for_each_" #COMPONENT "::count_corrupted::count=%u::clamping>\n", \
+                   (unsigned)count);                                           \
+            count = RR_MAX_ENTITY_COUNT;                                       \
+        }                                                                      \
+        /* Last resort safety: prevent infinite loops even if count is corrupted */ \
+        /* Use a conservative limit that's much smaller than RR_MAX_ENTITY_COUNT */ \
+        EntityIdx max_iterations = count;                                      \
+        if (max_iterations > 10000)                                            \
+        {                                                                      \
+            printf("<rr_simulation::for_each_" #COMPONENT "::count_too_large::count=%u::limiting_to_10000>\n", \
+                   (unsigned)count);                                           \
+            max_iterations = 10000;                                            \
+        }                                                                      \
+        for (EntityIdx pos = 0; pos < max_iterations; ++pos)                   \
+        {                                                                      \
+            if (pos >= count)                                                  \
+            {                                                                  \
+                printf("<rr_simulation::for_each_" #COMPONENT "::early_exit::pos=%u::count=%u>\n", \
+                       (unsigned)pos, (unsigned)count);                        \
+                break;                                                         \
+            }                                                                  \
             cb(this->COMPONENT##_vector[pos], user_captures);                  \
+        }                                                                      \
         return;                                                                \
     }                                                                          \
                                                                                \
@@ -113,6 +158,12 @@ void rr_simulation_for_each_entity(struct rr_simulation *this,
         rr_component_##COMPONENT##_init(&this->COMPONENT##_components[entity], \
                                         this);                                 \
         this->COMPONENT##_components[entity].parent_id = entity;               \
+        if (this->COMPONENT##_count >= RR_MAX_ENTITY_COUNT)                    \
+        {                                                                      \
+            printf("<rr_simulation::add_" #COMPONENT "::vector_overflow::count=%u>\n", \
+                   (unsigned)this->COMPONENT##_count);                         \
+            return rr_simulation_get_##COMPONENT(this, entity);                \
+        }                                                                      \
         this->COMPONENT##_vector[this->COMPONENT##_count++] = entity;          \
         return rr_simulation_get_##COMPONENT(this, entity);                    \
     }                                                                          \
