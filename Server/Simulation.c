@@ -35,14 +35,31 @@
 static void set_respawn_zone(struct rr_component_arena *arena, uint32_t x,
                              uint32_t y)
 {
-    if (arena == NULL || arena->maze == NULL)
+    if (arena == NULL)
     {
-        printf("<rr_simulation::set_respawn_zone::arena_or_maze_is_null>\n");
+        printf("<rr_simulation::set_respawn_zone::arena_is_null>\n");
         return;
+    }
+    if (arena->maze == NULL)
+    {
+        printf("<rr_simulation::set_respawn_zone::maze_is_null::biome=%u>\n",
+               (unsigned)arena->biome);
+        // Try to fix it
+        if (arena->biome < rr_biome_id_max)
+        {
+            arena->maze = &RR_MAZES[arena->biome];
+            printf("<rr_simulation::set_respawn_zone::maze_fixed::maze=%p>\n", (void*)arena->maze);
+        }
+        else
+        {
+            return;
+        }
     }
     float dim = arena->maze->grid_size;
     arena->respawn_zone.x = 2 * x * dim;
     arena->respawn_zone.y = 2 * y * dim;
+    printf("<rr_simulation::set_respawn_zone::x=%u::y=%u::grid_size=%f::respawn_zone_x=%f::respawn_zone_y=%f>\n",
+           (unsigned)x, (unsigned)y, dim, arena->respawn_zone.x, arena->respawn_zone.y);
 }
 
 #define SPAWN_ZONE_X 12
@@ -154,8 +171,14 @@ void rr_simulation_init(struct rr_simulation *this)
     EntityIdx id = rr_simulation_alloc_entity(this);
     struct rr_component_arena *arena = rr_simulation_add_arena(this, id);
     arena->biome = RR_GLOBAL_BIOME;
+    printf("<rr_simulation::init::biome=%u::RR_GLOBAL_BIOME=%u>\n",
+           (unsigned)arena->biome, (unsigned)RR_GLOBAL_BIOME);
     rr_component_arena_spatial_hash_init(arena, this);
+    printf("<rr_simulation::init::after_spatial_hash_init::maze=%p::grid_size=%f>\n",
+           (void*)arena->maze, arena->maze ? arena->maze->grid_size : 0.0f);
     set_respawn_zone(arena, SPAWN_ZONE_X, SPAWN_ZONE_Y);
+    printf("<rr_simulation::init::after_set_respawn_zone::respawn_zone_x=%f::respawn_zone_y=%f>\n",
+           arena->respawn_zone.x, arena->respawn_zone.y);
     set_spawn_zones();
 }
 

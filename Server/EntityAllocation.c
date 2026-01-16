@@ -48,7 +48,36 @@ EntityIdx rr_simulation_alloc_player(struct rr_simulation *this,
     struct rr_component_relations *relations =
         rr_simulation_add_relations(this, flower_id);
     struct rr_component_arena *arena = rr_simulation_get_arena(this, arena_id);
+    if (arena == NULL)
+    {
+        printf("<rr_server::alloc_player::arena_is_null::arena_id=%u>\n", (unsigned)arena_id);
+        return RR_NULL_ENTITY;
+    }
+    if (arena->maze == NULL)
+    {
+        printf("<rr_server::alloc_player::maze_is_null::biome=%u>\n", (unsigned)arena->biome);
+        if (arena->biome < rr_biome_id_max)
+        {
+            arena->maze = &RR_MAZES[arena->biome];
+            printf("<rr_server::alloc_player::maze_fixed::maze=%p>\n", (void*)arena->maze);
+        }
+        else
+        {
+            return RR_NULL_ENTITY;
+        }
+    }
     struct rr_spawn_zone *respawn_zone = &arena->respawn_zone;
+    if (respawn_zone->x == 0 && respawn_zone->y == 0)
+    {
+        printf("<rr_server::alloc_player::respawn_zone_is_zero::recalculating::SPAWN_ZONE_X=%u::SPAWN_ZONE_Y=%u>\n",
+               (unsigned)12, (unsigned)30);
+        // Recalculate respawn zone if it's 0
+        float dim = arena->maze->grid_size;
+        respawn_zone->x = 2 * 12 * dim;
+        respawn_zone->y = 2 * 30 * dim;
+        printf("<rr_server::alloc_player::respawn_zone_recalculated::x=%f::y=%f>\n",
+               respawn_zone->x, respawn_zone->y);
+    }
     float spawn_x = respawn_zone->x + 2 * arena->maze->grid_size * rr_frand();
     float spawn_y = respawn_zone->y + 2 * arena->maze->grid_size * rr_frand();
     printf("<rr_server::alloc_player::respawn_zone::x=%f::y=%f::grid_size=%f::spawn_x=%f::spawn_y=%f>\n",

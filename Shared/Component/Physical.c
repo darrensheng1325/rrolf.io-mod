@@ -91,6 +91,8 @@ void rr_component_physical_read(struct rr_component_physical *this,
                                 struct proto_bug *encoder)
 {
     uint64_t encoder_pos_before = encoder->current - encoder->start;
+    float x_before = this->x;
+    float y_before = this->y;
     uint64_t state =
         proto_bug_read_varuint(encoder, "physical component state");
     uint64_t encoder_pos_after_state = encoder->current - encoder->start;
@@ -98,15 +100,13 @@ void rr_component_physical_read(struct rr_component_physical *this,
     // Debug: log what we're reading
     if (state & state_flags_x || state & state_flags_y)
     {
-        printf("<rr_client::physical_read::state=0x%llx::encoder_before=%llu::encoder_after_state=%llu::state_bytes=%llu>\n",
+        printf("<rr_client::physical_read::state=0x%llx::encoder_before=%llu::encoder_after_state=%llu::state_bytes=%llu::x_before=%f::y_before=%f>\n",
                (unsigned long long)state,
                (unsigned long long)encoder_pos_before,
                (unsigned long long)encoder_pos_after_state,
-               (unsigned long long)(encoder_pos_after_state - encoder_pos_before));
+               (unsigned long long)(encoder_pos_after_state - encoder_pos_before),
+               x_before, y_before);
     }
-    
-    float x_before = this->x;
-    float y_before = this->y;
 #define X(NAME, TYPE) RR_DECODE_PUBLIC_FIELD(NAME, TYPE);
     FOR_EACH_PUBLIC_FIELD
 #undef X
@@ -117,6 +117,17 @@ void rr_component_physical_read(struct rr_component_physical *this,
         printf("<rr_client::physical_read::complete::x_before=%f::x_after=%f::y_before=%f::y_after=%f::bytes_read=%llu>\n",
                x_before, this->x, y_before, this->y,
                (unsigned long long)(encoder_pos_after - encoder_pos_before));
+        // Check if position was set to 0 when it shouldn't be
+        if ((state & state_flags_x) && this->x == 0 && x_before != 0)
+        {
+            printf("<rr_client::physical_read::WARNING_X_TELEPORTED_TO_ZERO::x_before=%f::x_after=%f>\n",
+                   x_before, this->x);
+        }
+        if ((state & state_flags_y) && this->y == 0 && y_before != 0)
+        {
+            printf("<rr_client::physical_read::WARNING_Y_TELEPORTED_TO_ZERO::y_before=%f::y_after=%f>\n",
+                   y_before, this->y);
+        }
         // Check for corruption
         if (isnan(this->x) || isnan(this->y) || isinf(this->x) || isinf(this->y))
         {

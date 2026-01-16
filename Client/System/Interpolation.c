@@ -37,13 +37,37 @@ void system_interpolation_for_each_function(EntityIdx entity, void *_captures)
         struct rr_component_physical *physical =
             rr_simulation_get_physical(this, entity);
         // Initialize lerp values from actual positions if they haven't been set yet
+        // Only initialize if the actual position is non-zero (to avoid initializing to 0 when entity is just created)
+        // This ensures that when an entity is created at 0,0 and then receives its real position,
+        // the lerp values will be initialized to the real position, not 0
         if (physical->lerp_x == 0 && physical->x != 0)
+        {
             physical->lerp_x = physical->x;
+            printf("<rr_client::interpolation::initializing_lerp_x::physical_x=%f::lerp_x=%f>\n",
+                   physical->x, physical->lerp_x);
+        }
         if (physical->lerp_y == 0 && physical->y != 0)
+        {
             physical->lerp_y = physical->y;
+            printf("<rr_client::interpolation::initializing_lerp_y::physical_y=%f::lerp_y=%f>\n",
+                   physical->y, physical->lerp_y);
+        }
 
-        physical->velocity.x = physical->x - physical->lerp_x;
-        physical->velocity.y = physical->y - physical->lerp_y;
+        // Calculate velocity - if lerp values haven't been initialized yet (both are 0),
+        // this means the entity is still at 0,0 and hasn't received its real position yet
+        // In that case, set velocity to 0 to avoid incorrect calculations
+        if (physical->lerp_x == 0 && physical->lerp_y == 0 && physical->x == 0 && physical->y == 0)
+        {
+            // Entity is still at 0,0, hasn't received position update yet
+            physical->velocity.x = 0;
+            physical->velocity.y = 0;
+        }
+        else
+        {
+            // Normal velocity calculation
+            physical->velocity.x = physical->x - physical->lerp_x;
+            physical->velocity.y = physical->y - physical->lerp_y;
+        }
 
         physical->lerp_x = rr_lerp(physical->lerp_x, physical->x, 10 * delta);
         physical->lerp_y = rr_lerp(physical->lerp_y, physical->y, 10 * delta);

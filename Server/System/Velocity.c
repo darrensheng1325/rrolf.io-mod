@@ -243,6 +243,27 @@ static void system_velocity(EntityIdx id, void *simulation)
     rr_vector_set(&physical->wall_collision, 0, 0);
     struct rr_component_arena *arena =
         rr_simulation_get_arena(simulation, physical->arena);
+    if (arena == NULL)
+    {
+        printf("<rr_server::velocity::arena_is_null::entity=%u::arena_id=%u>\n",
+               (unsigned)id, (unsigned)physical->arena);
+        return;
+    }
+    if (arena->maze == NULL)
+    {
+        printf("<rr_server::velocity::maze_is_null::entity=%u::biome=%u>\n",
+               (unsigned)id, (unsigned)arena->biome);
+        // Try to fix it
+        if (arena->biome < rr_biome_id_max)
+        {
+            arena->maze = &RR_MAZES[arena->biome];
+            printf("<rr_server::velocity::maze_fixed::maze=%p>\n", (void*)arena->maze);
+        }
+        else
+        {
+            return;
+        }
+    }
     if (rr_vector_magnitude_cmp(&vel, arena->maze->grid_size) == 1)
         rr_vector_set_magnitude(&vel, arena->maze->grid_size);
     float before_x = physical->x;
