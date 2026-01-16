@@ -124,6 +124,8 @@ static void rr_server_client_create_player_info(struct rr_server *server,
     player_info->level = level_from_xp(client->experience);
     rr_component_player_info_set_slot_count(
         client->player_info, RR_SLOT_COUNT_FROM_LEVEL(player_info->level));
+    // Set arena to 1 (main arena) initially
+    rr_component_player_info_set_arena(player_info, 1);
     struct rr_component_arena *arena =
         rr_simulation_get_arena(&server->simulation, 1);
     for (uint64_t i = 0; i < player_info->slot_count; ++i)

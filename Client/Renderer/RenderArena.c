@@ -29,8 +29,13 @@
 void render_background(struct rr_component_player_info *player_info,
                        struct rr_game *this)
 {
+    // If arena is 0, default to arena 1 (the main arena)
     if (player_info->arena == 0)
-        return;
+    {
+        printf("<rr_client::render_background::arena_is_zero::using_default_1::flower_id=%u>\n",
+               (unsigned)player_info->flower_id);
+        player_info->arena = 1;
+    }
     struct rr_renderer *renderer = this->renderer;
     double scale = player_info->lerp_camera_fov * renderer->scale;
     double leftX = player_info->lerp_camera_x - renderer->width / (2 * scale);
