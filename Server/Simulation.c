@@ -229,6 +229,7 @@ static void spawn_mob(struct rr_simulation *this, uint32_t grid_x,
                       uint32_t grid_y)
 {
     struct rr_component_arena *arena = rr_simulation_get_arena(this, 1);
+    // struct rr_component_arena *arena = {.biome = RR_GLOBAL_BIOME, .maze = &RR_MAZES[RR_GLOBAL_BIOME], .spatial_hash = {.hash_table = NULL, .hash_table_size = 0, .hash_table_count = 0, .hash_table_capacity = 0}};
     struct rr_maze_grid *grid =
         rr_component_arena_get_grid(arena, grid_x, grid_y);
     uint8_t id;

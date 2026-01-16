@@ -965,8 +965,13 @@ static void write_serverbound_packet_desktop(struct rr_game *this)
                        rr_bitset_get(this->input_data->keys_pressed, 39))
                       << 3;
     movement_flags |= this->input_data->mouse_buttons << 4;
-    movement_flags |= rr_bitset_get(this->input_data->keys_pressed, 32) << 4;
-    movement_flags |= rr_bitset_get(this->input_data->keys_pressed, 16) << 5;
+    // Space key (32) extends petals (bit 4)
+    // Shift keys (16 = left shift, 160 = left shift, 161 = right shift) retract petals (bit 5)
+    movement_flags |= rr_bitset_get(this->input_data->keys_pressed, 32) << 4; // Space
+    if (rr_bitset_get(this->input_data->keys_pressed, 16) ||  // Left Shift
+        rr_bitset_get(this->input_data->keys_pressed, 160) || // Left Shift (alternative)
+        rr_bitset_get(this->input_data->keys_pressed, 161))   // Right Shift
+        movement_flags |= 1 << 5; // Retract
     movement_flags |= this->cache.use_mouse << 6;
 
     if (this->is_dev)
@@ -1242,10 +1247,16 @@ void rr_game_tick(struct rr_game *this, float delta)
     {
         if (this->simulation_ready)
         {
-            if (!this->is_mobile)
-                write_serverbound_packet_desktop(this);
-            else
-                rr_write_serverbound_packet_mobile(this);
+            // Only send input if player_info exists and has a flower
+            // This prevents sending input before the player is fully initialized
+            if (this->player_info != NULL && 
+                this->player_info->flower_id != RR_NULL_ENTITY)
+            {
+                if (!this->is_mobile)
+                    write_serverbound_packet_desktop(this);
+                else
+                    rr_write_serverbound_packet_mobile(this);
+            }
         }
     }
     if (rr_bitset_get_bit(this->input_data->keys_pressed_this_tick,

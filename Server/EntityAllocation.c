@@ -86,7 +86,8 @@ EntityIdx rr_simulation_alloc_player(struct rr_simulation *this,
     rr_component_physical_set_y(physical, spawn_y);
     rr_component_physical_set_radius(physical, 25.0f);
     physical->mass = 10;
-    physical->arena = arena_id;
+    // Ensure arena is valid (not 0)
+    physical->arena = (arena_id == 0 || arena_id == RR_NULL_ENTITY) ? 1 : arena_id;
     physical->friction = 0.75;
     if (rand() < RAND_MAX / 1000)
         rr_component_physical_set_angle(physical, rr_frand() * M_PI * 2);
@@ -198,7 +199,8 @@ static EntityIdx rr_simulation_alloc_mob_non_recursive(
     rr_component_physical_set_angle(physical, rr_frand() * 2 * M_PI);
     rr_component_physical_set_x(physical, x);
     rr_component_physical_set_y(physical, y);
-    physical->arena = arena_id;
+    // Ensure arena is valid (not 0)
+    physical->arena = (arena_id == 0 || arena_id == RR_NULL_ENTITY) ? 1 : arena_id;
     physical->friction = 0.75;
     physical->mass = 25.0f * powf(6, RR_MOB_RARITY_SCALING[rarity_id].radius);
     rr_component_health_set_max_health(health,
@@ -238,7 +240,8 @@ EntityIdx rr_simulation_alloc_mob(struct rr_simulation *this,
     rr_component_physical_set_angle(physical, rr_frand() * 2 * M_PI);
     rr_component_physical_set_x(physical, x);
     rr_component_physical_set_y(physical, y);
-    physical->arena = arena_id;
+    // Ensure arena is valid (not 0)
+    physical->arena = (arena_id == 0 || arena_id == RR_NULL_ENTITY) ? 1 : arena_id;
     physical->friction = 0.75;
     physical->mass = 25.0f * powf(6, RR_MOB_RARITY_SCALING[rarity_id].radius);
     physical->slow_resist = rr_fclamp(0.2 * (rarity_scale->radius - 1), 0, 1);

@@ -16,6 +16,7 @@
 #include <Server/System/System.h>
 
 #include <Server/Simulation.h>
+#include <Shared/Component/PlayerInfo.h>
 #include <Shared/Entity.h>
 #include <Shared/Vector.h>
 #include <math.h>
@@ -37,9 +38,23 @@ void rr_system_camera_tick(struct rr_simulation *this)
                 printf("<rr_server::camera_tick::CORRUPTED_POSITION::flower_id=%u::x=%f::y=%f>\n",
                        (unsigned)player_info->flower_id, physical->x, physical->y);
             }
+            // Store old values to check if they changed
+            float old_camera_x = player_info->camera_x;
+            float old_camera_y = player_info->camera_y;
+            
             rr_component_player_info_set_camera_x(player_info, physical->x);
             rr_component_player_info_set_camera_y(player_info, physical->y);
+            // Note: physical->arena is RR_SERVER_ONLY, so it exists on server
             rr_component_player_info_set_arena(player_info, physical->arena);
+            
+            // If values didn't change, the setter won't set protocol_state
+            // Force protocol_state to be set so camera position is sent to client
+            // This ensures player_info updates are sent even when player isn't moving
+            // Using bit values: camera_x = 0b0000100 (4), camera_y = 0b1000000 (64)
+            if (old_camera_x == player_info->camera_x && old_camera_y == player_info->camera_y)
+            {
+                player_info->protocol_state |= 0b0000100 | 0b1000000; // camera_x | camera_y
+            }
             continue;
         }
         // tempfix

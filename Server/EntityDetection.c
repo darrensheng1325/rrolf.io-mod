@@ -129,8 +129,29 @@ EntityIdx rr_simulation_find_nearest_enemy_custom_pos(
     shg_captures.x = x;
     shg_captures.y = y;
     shg_captures.seeker_team = relations->team;
-    struct rr_spatial_hash *shg =
-        &rr_simulation_get_arena(simulation, physical->arena)->spatial_hash;
+    
+    // Safety check: ensure arena is valid before accessing spatial hash
+    if (physical->arena == 0 || physical->arena == RR_NULL_ENTITY)
+    {
+        // Invalid arena - return no target
+        return RR_NULL_ENTITY;
+    }
+    
+    struct rr_component_arena *arena = rr_simulation_get_arena(simulation, physical->arena);
+    if (arena == NULL)
+    {
+        // Arena doesn't exist - return no target
+        return RR_NULL_ENTITY;
+    }
+    
+    struct rr_spatial_hash *shg = &arena->spatial_hash;
+    
+    // Safety check: ensure spatial hash is initialized
+    if (shg == NULL || shg->cells == NULL || shg->size == 0)
+    {
+        return RR_NULL_ENTITY;
+    }
+    
     rr_spatial_hash_query(shg, x, y, min_dist, min_dist, &shg_captures,
                           shg_cb_enemy);
 
@@ -170,8 +191,29 @@ EntityIdx rr_simulation_find_nearest_friend_custom_pos(
     shg_captures.x = x;
     shg_captures.y = y;
     shg_captures.seeker_team = relations->team;
-    struct rr_spatial_hash *shg =
-        &rr_simulation_get_arena(simulation, physical->arena)->spatial_hash;
+    
+    // Safety check: ensure arena is valid before accessing spatial hash
+    if (physical->arena == 0 || physical->arena == RR_NULL_ENTITY)
+    {
+        // Invalid arena - return no target
+        return RR_NULL_ENTITY;
+    }
+    
+    struct rr_component_arena *arena = rr_simulation_get_arena(simulation, physical->arena);
+    if (arena == NULL)
+    {
+        // Arena doesn't exist - return no target
+        return RR_NULL_ENTITY;
+    }
+    
+    struct rr_spatial_hash *shg = &arena->spatial_hash;
+    
+    // Safety check: ensure spatial hash is initialized
+    if (shg == NULL || shg->cells == NULL || shg->size == 0)
+    {
+        return RR_NULL_ENTITY;
+    }
+    
     rr_spatial_hash_query(shg, x, y, min_dist, min_dist, &shg_captures,
                           shg_cb_friend);
 

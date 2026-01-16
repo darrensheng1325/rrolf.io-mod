@@ -137,16 +137,20 @@ void rr_main_loop(struct rr_game *this)
                 new Array(256).fill(0).map(function(_, i) { return i; });
             window.onkeydown = function(e)
             {
+                // Use keyCode as fallback since which is deprecated
+                const keyCode = e.which || e.keyCode || 0;
                 _rr_key_event(
-                    $0, 1, e.which,
+                    $0, 1, keyCode,
                     e.key ? (!e.ctrlKey && !e.metaKey && e.key.length == 1) *
                                 e.key.charCodeAt()
                           : 0);
             };
             window.onkeyup = function(e)
             {
+                // Use keyCode as fallback since which is deprecated
+                const keyCode = e.which || e.keyCode || 0;
                 _rr_key_event(
-                    $0, 0, e.which,
+                    $0, 0, keyCode,
                     e.key ? (!e.ctrlKey && !e.metaKey && e.key.length == 1) *
                                 e.key.charCodeAt()
                           : 0);
