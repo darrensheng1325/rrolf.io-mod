@@ -195,7 +195,16 @@ void rr_server_shared_tick(void)
             struct proto_bug encoder;
             proto_bug_init(&encoder, message_buffer);
             proto_bug_set_bound(&encoder, message_buffer + size);
+            printf("<rr_server::shared_memory::message_received::size=%u::encoder_start=%p::encoder_end=%p::encoder_current=%p>\n",
+                   (unsigned)size,
+                   (void*)encoder.start,
+                   (void*)encoder.end,
+                   (void*)encoder.current);
             uint8_t header = proto_bug_read_uint8(&encoder, "header");
+            printf("<rr_server::shared_memory::header_read::header=0x%02x::encoder_current=%p::bytes_read=%llu>\n",
+                   (unsigned)header,
+                   (void*)encoder.current,
+                   (unsigned long long)(encoder.current - encoder.start));
             
             server_handle_client_message(g_server, client, &encoder, header);
             

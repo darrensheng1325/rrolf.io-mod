@@ -76,6 +76,7 @@ int rr_on_socket_event_lws(struct lws *wsi, enum lws_callback_reasons reason,
 void rr_websocket_init(struct rr_websocket *this)
 {
     memset(this, 0, sizeof *this);
+    this->encryption_enabled = 1; // Default to encryption enabled
 }
 
 void rr_websocket_connect_to(struct rr_websocket *this, char const *link)
@@ -84,6 +85,8 @@ void rr_websocket_connect_to(struct rr_websocket *this, char const *link)
     this->recieved_first_packet = 0;
 #ifdef EMSCRIPTEN
 #ifdef SINGLE_PLAYER_BUILD
+    // In single-player mode, disable encryption and use shared memory
+    this->encryption_enabled = 0;
     EM_ASM(
         {
             // Allocate shared memory structure in WASM heap
@@ -118,9 +121,10 @@ void rr_websocket_connect_to(struct rr_websocket *this, char const *link)
                             [messagePtr, 65536]);
                         
                         if (size > 0) {
-                            console.log('[Client] Received message from server, size:', size, 'header:', Module.HEAPU8[messagePtr]);
-                            const messageData = new Uint8Array(Module.HEAPU8.buffer, messagePtr, size);
-                            HEAPU8.set(messageData, $2);
+                            // Copy message data into incoming_data buffer
+                            // Use the same method as non-single-player mode for consistency
+                            const sourceArray = new Uint8Array(Module.HEAPU8.buffer, messagePtr, size);
+                            HEAPU8.set(sourceArray, $2);
                             _rr_on_socket_event_emscripten($0, 2, $2, BigInt(size));
                             messagesReceived++;
                         } else {
@@ -140,6 +144,8 @@ void rr_websocket_connect_to(struct rr_websocket *this, char const *link)
         },
         this, link, incoming_data);
 #else
+    // Multiplayer mode - enable encryption and use WebSocket
+    this->encryption_enabled = 1;
     EM_ASM(
         {
             let string = UTF8ToString($1);
@@ -246,12 +252,13 @@ void rr_websocket_send(struct rr_websocket *this, uint32_t length)
         printf("::key=%llu>\n", (unsigned long long)this->serverbound_encryption_key);
         first_send = 0;
     }
-    // Skip encryption in single-player mode
-    #ifndef SINGLE_PLAYER_BUILD
-    rr_encrypt(RR_OUTGOING_PACKET, length, this->serverbound_encryption_key);
-    this->serverbound_encryption_key =
-        rr_get_hash(rr_get_hash(this->serverbound_encryption_key));
-    #endif
+    // Encrypt if enabled (runtime check, not compile-time)
+    if (this->encryption_enabled)
+    {
+        rr_encrypt(RR_OUTGOING_PACKET, length, this->serverbound_encryption_key);
+        this->serverbound_encryption_key =
+            rr_get_hash(rr_get_hash(this->serverbound_encryption_key));
+    }
     // Debug: print first 16 bytes after encryption (for first packet only)
     if (!first_send && length > 0) {
         printf("<rr_client::after_encrypt::bytes=");
@@ -287,13 +294,14 @@ void rr_websocket_send_all(struct rr_websocket *this)
         return;
     for (uint32_t i = 0; i < at; ++i)
     {
-        // Skip encryption in single-player mode
-        #ifndef SINGLE_PLAYER_BUILD
-        rr_encrypt(outputs[i], packet_lengths[i],
-                   this->serverbound_encryption_key);
-        this->serverbound_encryption_key =
-            rr_get_hash(rr_get_hash(this->serverbound_encryption_key));
-        #endif
+        // Encrypt if enabled (runtime check, not compile-time)
+        if (this->encryption_enabled)
+        {
+            rr_encrypt(outputs[i], packet_lengths[i],
+                       this->serverbound_encryption_key);
+            this->serverbound_encryption_key =
+                rr_get_hash(rr_get_hash(this->serverbound_encryption_key));
+        }
 #ifndef EMSCRIPTEN
         lws_write(this->socket, outputs[i], packet_lengths[i],
                   LWS_WRITE_BINARY);

@@ -584,14 +584,15 @@ void rr_game_websocket_on_event_function(enum rr_websocket_event_type type,
                 printf("%02x ", data_bytes[i]);
             }
             printf(">\n");
-            // Skip decryption in single-player mode
-            #ifndef SINGLE_PLAYER_BUILD
-            rr_decrypt(data, 1024, 21094093777837637ull);
-            rr_decrypt(data, 8, 1);
-            rr_decrypt(data, 1024, 59731158950470853ull);
-            rr_decrypt(data, 1024, 64709235936361169ull);
-            rr_decrypt(data, 1024, 59013169977270713ull);
-            #endif
+            // Decrypt if encryption is enabled (runtime check)
+            if (this->socket.encryption_enabled)
+            {
+                rr_decrypt(data, 1024, 21094093777837637ull);
+                rr_decrypt(data, 8, 1);
+                rr_decrypt(data, 1024, 59731158950470853ull);
+                rr_decrypt(data, 1024, 64709235936361169ull);
+                rr_decrypt(data, 1024, 59013169977270713ull);
+            }
             // Reinitialize encoder (no decryption needed in single-player)
             proto_bug_init(&encoder, data);
             proto_bug_set_bound(&encoder, data + size);
@@ -624,12 +625,13 @@ void rr_game_websocket_on_event_function(enum rr_websocket_event_type type,
             1; // signifies that the socket is verified on the serverside
         this->socket_pending = 0;
         // send instajoin
-        // Skip decryption in single-player mode
-        #ifndef SINGLE_PLAYER_BUILD
-        this->socket.clientbound_encryption_key =
-            rr_get_hash(this->socket.clientbound_encryption_key);
-        rr_decrypt(data, size, this->socket.clientbound_encryption_key);
-        #endif
+        // Decrypt if encryption is enabled (runtime check)
+        if (this->socket.encryption_enabled)
+        {
+            this->socket.clientbound_encryption_key =
+                rr_get_hash(this->socket.clientbound_encryption_key);
+            rr_decrypt(data, size, this->socket.clientbound_encryption_key);
+        }
         // Reinitialize encoder (no decryption needed in single-player)
         proto_bug_init(&encoder, data);
         proto_bug_set_bound(&encoder, data + size);
@@ -684,11 +686,8 @@ void rr_game_websocket_on_event_function(enum rr_websocket_event_type type,
                 {
                     printf("<rr_client::update_message::initializing_simulation>\n");
                     rr_simulation_init(this->simulation);
-#ifdef SINGLE_PLAYER_BUILD
-                    // Initialize arena for client simulation (needed for rendering)
-                    extern void rr_simulation_init_client_arena(struct rr_simulation *);
-                    rr_simulation_init_client_arena(this->simulation);
-#endif
+                    // Arena initialization is handled by the server in both modes
+                    // Client receives arena updates through normal protocol
                     rr_simulation_init(this->deletion_simulation);
                     this->simulation_ready = 1;
                 }
@@ -1026,24 +1025,8 @@ void rr_game_tick(struct rr_game *this, float delta)
 
     if (this->simulation_ready)
     {
-#ifdef SINGLE_PLAYER_BUILD
-        // Ensure arena has maze pointer set before tick (needed for tick_maze)
-        // This is a safety check in case the maze pointer was lost
-        if (this->simulation->arena_count > 0)
-        {
-            for (EntityIdx i = 0; i < this->simulation->arena_count; ++i)
-            {
-                EntityIdx arena_id = this->simulation->arena_vector[i];
-                struct rr_component_arena *arena = rr_simulation_get_arena(this->simulation, arena_id);
-                if (arena && (arena->maze == NULL || arena->biome != rr_biome_id_hell_creek))
-                {
-                    extern struct rr_maze_declaration RR_MAZES[];
-                    arena->maze = &RR_MAZES[rr_biome_id_hell_creek];
-                    arena->biome = rr_biome_id_hell_creek;
-                }
-            }
-        }
-#endif
+        // Arena initialization is handled by the server in both modes
+        // No special-case code needed here
         rr_simulation_tick(this->simulation, this->lerp_delta);
 #ifdef SINGLE_PLAYER_BUILD
         // In single-player mode, the server's tick doesn't call interpolation,

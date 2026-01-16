@@ -35,6 +35,11 @@
 static void set_respawn_zone(struct rr_component_arena *arena, uint32_t x,
                              uint32_t y)
 {
+    if (arena == NULL || arena->maze == NULL)
+    {
+        printf("<rr_simulation::set_respawn_zone::arena_or_maze_is_null>\n");
+        return;
+    }
     float dim = arena->maze->grid_size;
     arena->respawn_zone.x = 2 * x * dim;
     arena->respawn_zone.y = 2 * y * dim;
@@ -143,26 +148,6 @@ static void set_spawn_zones()
     }
 }
 
-#ifdef RR_WORKER_MODE
-// In worker mode, we need a version that matches the client's signature
-// but does server initialization
-void rr_simulation_init_server(struct rr_simulation *this)
-{
-    memset(this, 0, sizeof *this);
-    EntityIdx id = rr_simulation_alloc_entity(this);
-    struct rr_component_arena *arena = rr_simulation_add_arena(this, id);
-    arena->biome = RR_GLOBAL_BIOME;
-    rr_component_arena_spatial_hash_init(arena, this);
-    set_respawn_zone(arena, SPAWN_ZONE_X, SPAWN_ZONE_Y);
-    set_spawn_zones();
-}
-
-// Also provide the client's version (just zeros memory)
-void rr_simulation_init(struct rr_simulation *this)
-{
-    memset(this, 0, sizeof *this);
-}
-#else
 void rr_simulation_init(struct rr_simulation *this)
 {
     memset(this, 0, sizeof *this);
@@ -173,7 +158,6 @@ void rr_simulation_init(struct rr_simulation *this)
     set_respawn_zone(arena, SPAWN_ZONE_X, SPAWN_ZONE_Y);
     set_spawn_zones();
 }
-#endif
 
 struct too_close_captures
 {
@@ -266,61 +250,26 @@ static void count_flower_vicinity(EntityIdx entity, void *_simulation)
     struct rr_component_arena *arena = rr_simulation_get_arena(this, 1);
     struct rr_component_physical *physical =
         rr_simulation_get_physical(this, entity);
-    
-    // Safety check: ensure arena and maze are valid
-    if (arena == NULL || arena->maze == NULL || arena->maze->maze_dim == 0 || arena->maze->grid_size <= 0)
-    {
-        printf("<count_flower_vicinity::invalid_arena_or_maze>\n");
-        return;
-    }
-    
 #ifdef RIVET_BUILD
 #define FOV 3072
 #else
 #define FOV 4096
 #endif
-    uint32_t maze_dim = arena->maze->maze_dim;
-    if (maze_dim > 1000) // Sanity check - maze_dim should be reasonable
-    {
-        printf("<count_flower_vicinity::maze_dim_too_large::dim=%u>\n", (unsigned)maze_dim);
-        maze_dim = 100; // Use a safe default
-    }
-    
     uint32_t sx = rr_fclamp((physical->x - FOV) / arena->maze->grid_size, 0,
-                            maze_dim - 1);
+                            arena->maze->maze_dim - 1);
     uint32_t sy = rr_fclamp((physical->y - FOV) / arena->maze->grid_size, 0,
-                            maze_dim - 1);
+                            arena->maze->maze_dim - 1);
     uint32_t ex = rr_fclamp((physical->x + FOV) / arena->maze->grid_size, 0,
-                            maze_dim - 1);
+                            arena->maze->maze_dim - 1);
     uint32_t ey = rr_fclamp((physical->y + FOV) / arena->maze->grid_size, 0,
-                            maze_dim - 1);
+                            arena->maze->maze_dim - 1);
 #undef FOV
-    
-    // Additional safety: ensure bounds are valid and not too large
-    if (ex < sx || ey < sy)
-    {
-        printf("<count_flower_vicinity::invalid_bounds::sx=%u::ex=%u::sy=%u::ey=%u>\n",
-               (unsigned)sx, (unsigned)ex, (unsigned)sy, (unsigned)ey);
-        return;
-    }
-    
-    // Limit iteration range to prevent infinite loops
-    if (ex - sx > 100 || ey - sy > 100)
-    {
-        printf("<count_flower_vicinity::bounds_too_large::sx=%u::ex=%u::sy=%u::ey=%u>\n",
-               (unsigned)sx, (unsigned)ex, (unsigned)sy, (unsigned)ey);
-        ex = sx + 100 < maze_dim ? sx + 100 : maze_dim - 1;
-        ey = sy + 100 < maze_dim ? sy + 100 : maze_dim - 1;
-    }
-    
     uint32_t level = rr_simulation_get_flower(_simulation, entity)->level;
-    for (uint32_t x = sx; x <= ex && x < maze_dim; ++x)
-        for (uint32_t y = sy; y <= ey && y < maze_dim; ++y)
+    for (uint32_t x = sx; x <= ex; ++x)
+        for (uint32_t y = sy; y <= ey; ++y)
         {
             struct rr_maze_grid *grid =
                 rr_component_arena_get_grid(arena, x, y);
-            if (grid == NULL)
-                continue;
             grid->player_count += grid->player_count < PLAYER_COUNT_CAP;
             grid->local_difficulty +=
                 rr_fclamp((level - (grid->difficulty - 1) * 2.1) / 10, -1, 1);
@@ -408,44 +357,21 @@ static int tick_grid(struct rr_simulation *this, struct rr_maze_grid *grid,
 static void tick_maze(struct rr_simulation *this)
 {
     struct rr_component_arena *arena = rr_simulation_get_arena(this, 1);
-    
-    // Safety check: ensure arena and maze are valid
-    if (arena == NULL || arena->maze == NULL || arena->maze->maze_dim == 0)
+    if (arena == NULL || arena->maze == NULL)
     {
-        printf("<tick_maze::invalid_arena_or_maze>\n");
-        return;
+        printf("<rr_simulation::tick_maze::arena_or_maze_is_null::arena=%p>\n", (void*)arena);
+        return; // Can't tick maze if arena or maze is not initialized
     }
-    
-    uint32_t maze_dim = arena->maze->maze_dim;
-    if (maze_dim > 1000) // Sanity check - maze_dim should be reasonable
-    {
-        printf("<tick_maze::maze_dim_too_large::dim=%u::clamping_to_100>\n", (unsigned)maze_dim);
-        maze_dim = 100; // Use a safe default
-    }
-    
-    uint32_t maze_size = maze_dim * maze_dim;
-    if (maze_size > 100000) // Prevent excessive iteration
-    {
-        printf("<tick_maze::maze_size_too_large::size=%u>\n", (unsigned)maze_size);
-        return;
-    }
-    
-    for (uint32_t i = 0; i < maze_size && i < arena->maze->maze_dim * arena->maze->maze_dim; ++i)
+    for (uint32_t i = 0; i < arena->maze->maze_dim * arena->maze->maze_dim; ++i)
         arena->maze->maze[i].local_difficulty =
             arena->maze->maze[i].player_count = 0;
 
     rr_simulation_for_each_flower(this, this, count_flower_vicinity);
     rr_simulation_for_each_mob(this, this, despawn_mob);
-    
-    // Limit grid iteration to prevent infinite loops
-    uint32_t max_grid = maze_dim < 200 ? maze_dim : 200;
-    for (uint32_t grid_x = 0; grid_x < max_grid; grid_x += 2)
+    for (uint32_t grid_x = 0; grid_x < arena->maze->maze_dim; grid_x += 2)
     {
-        for (uint32_t grid_y = 0; grid_y < max_grid; grid_y += 2)
+        for (uint32_t grid_y = 0; grid_y < arena->maze->maze_dim; grid_y += 2)
         {
-            if (grid_x >= maze_dim || grid_y >= maze_dim)
-                continue;
-            
             struct rr_maze_grid *nw =
                 rr_component_arena_get_grid(arena, grid_x, grid_y);
             struct rr_maze_grid *ne =
@@ -454,10 +380,6 @@ static void tick_maze(struct rr_simulation *this)
                 rr_component_arena_get_grid(arena, grid_x, grid_y + 1);
             struct rr_maze_grid *se =
                 rr_component_arena_get_grid(arena, grid_x + 1, grid_y + 1);
-            
-            if (nw == NULL || ne == NULL || sw == NULL || se == NULL)
-                continue;
-            
             float max_overall = get_max_points(nw) + get_max_points(ne) +
                                 get_max_points(sw) + get_max_points(se);
             if (nw->grid_points + ne->grid_points + sw->grid_points +
@@ -499,16 +421,8 @@ static void tick_maze(struct rr_simulation *this)
 
 static int64_t last_zone_epoch = -1;
 
-#ifdef RR_WORKER_MODE
-// In worker mode (single-player), match client signature
-void rr_simulation_tick(struct rr_simulation *this, float delta)
-#else
-void rr_simulation_tick(struct rr_simulation *this)
-#endif
+void rr_simulation_tick(struct rr_simulation *this, float)
 {
-#ifdef RR_WORKER_MODE
-    (void)delta; // Server doesn't use delta, but client passes it
-#endif
     struct timeval t;
     gettimeofday(&t, NULL);
     int64_t time = (t.tv_sec * 1000000 + t.tv_usec);

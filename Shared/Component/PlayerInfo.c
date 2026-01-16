@@ -140,9 +140,24 @@ void rr_component_player_info_write(struct rr_component_player_info *this,
     if (this->parent_id != client->parent_id)
         state &= ~(state_flags_petals | state_flags_petals_collected);
     proto_bug_write_varuint(encoder, state, "player_info component state");
+    uint64_t encoder_pos_before = encoder->current - encoder->start;
+    printf("<rr_server::player_info_write::state=0x%llx::flower_id_bit=%llu::camera_x_bit=%llu::camera_y_bit=%llu::camera_fov_bit=%llu::encoder_pos_before=%llu>\n",
+           (unsigned long long)state,
+           (unsigned long long)(state & state_flags_flower_id),
+           (unsigned long long)(state & state_flags_camera_x),
+           (unsigned long long)(state & state_flags_camera_y),
+           (unsigned long long)(state & state_flags_camera_fov),
+           (unsigned long long)encoder_pos_before);
 #define X(NAME, TYPE) RR_ENCODE_PUBLIC_FIELD(NAME, TYPE);
     FOR_EACH_PUBLIC_FIELD
 #undef X
+    uint64_t encoder_pos_after = encoder->current - encoder->start;
+    printf("<rr_server::player_info_write::encoder_pos_after=%llu::bytes_written=%llu::flower_id=%u::camera_x=%f::camera_y=%f>\n",
+           (unsigned long long)encoder_pos_after,
+           (unsigned long long)(encoder_pos_after - encoder_pos_before),
+           (unsigned)this->flower_id,
+           this->camera_x,
+           this->camera_y);
     if (state & state_flags_petals)
     {
         for (uint32_t i = 0; i < this->slot_count; ++i)
@@ -189,37 +204,37 @@ RR_DEFINE_PUBLIC_FIELD(player_info, uint8_t, squad_pos);
 
 #ifdef RR_CLIENT
 void rr_component_player_info_read(struct rr_component_player_info *this,
-                                   struct proto_bug *encoder)
+    struct proto_bug *encoder)
 {
-    uint64_t state =
-        proto_bug_read_varuint(encoder, "player_info component state");
+uint64_t state =
+proto_bug_read_varuint(encoder, "player_info component state");
 #define X(NAME, TYPE) RR_DECODE_PUBLIC_FIELD(NAME, TYPE);
-    FOR_EACH_PUBLIC_FIELD
+FOR_EACH_PUBLIC_FIELD
 #undef X
-    if (state & state_flags_petals)
-    {
-        for (uint32_t i = 0; i < this->slot_count; ++i)
-        {
-            this->slots[i].id = proto_bug_read_uint8(encoder, "p_id");
-            this->slots[i].rarity = proto_bug_read_uint8(encoder, "p_rar");
-            this->slots[i].client_cooldown =
-                proto_bug_read_uint8(encoder, "p_ccd");
+if (state & state_flags_petals)
+{
+for (uint32_t i = 0; i < this->slot_count; ++i)
+{
+this->slots[i].id = proto_bug_read_uint8(encoder, "p_id");
+this->slots[i].rarity = proto_bug_read_uint8(encoder, "p_rar");
+this->slots[i].client_cooldown =
+proto_bug_read_uint8(encoder, "p_ccd");
 
-            this->secondary_slots[i].id = proto_bug_read_uint8(encoder, "p_id");
-            this->secondary_slots[i].rarity =
-                proto_bug_read_uint8(encoder, "p_rar");
-        }
-    }
-    if (state & state_flags_petals_collected)
-    {
-        uint8_t id = proto_bug_read_uint8(encoder, "dr_id");
-        while (id)
-        {
-            uint8_t rarity = proto_bug_read_uint8(encoder, "dr_rar");
-            this->collected_this_run[id * rr_rarity_id_max + rarity] =
-                proto_bug_read_varuint(encoder, "dr_cnt");
-            id = proto_bug_read_uint8(encoder, "dr_id");
-        }
-    }
+this->secondary_slots[i].id = proto_bug_read_uint8(encoder, "p_id");
+this->secondary_slots[i].rarity =
+proto_bug_read_uint8(encoder, "p_rar");
+}
+}
+if (state & state_flags_petals_collected)
+{
+uint8_t id = proto_bug_read_uint8(encoder, "dr_id");
+while (id)
+{
+uint8_t rarity = proto_bug_read_uint8(encoder, "dr_rar");
+this->collected_this_run[id * rr_rarity_id_max + rarity] =
+proto_bug_read_varuint(encoder, "dr_cnt");
+id = proto_bug_read_uint8(encoder, "dr_id");
+}
+}
 }
 #endif

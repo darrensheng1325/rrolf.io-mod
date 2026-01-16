@@ -24,5 +24,6 @@ void rr_deletion_simulation_tick(struct rr_simulation *, float);
 EntityIdx rr_simulation_alloc_entity(struct rr_simulation *);
 
 #ifdef SINGLE_PLAYER_BUILD
-void rr_simulation_init_client_arena(struct rr_simulation *);
+// Removed: rr_simulation_init_client_arena - no longer needed
+// Server handles arena creation, client receives updates through protocol
 #endif

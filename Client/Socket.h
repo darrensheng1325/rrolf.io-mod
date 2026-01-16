@@ -36,6 +36,7 @@ enum rr_websocket_event_type
 struct rr_websocket
 {
     uint8_t recieved_first_packet;
+    uint8_t encryption_enabled; // Runtime flag: 1 = encrypt, 0 = no encryption
     void *user_data;
 #ifndef EMSCRIPTEN
     struct lws_context *socket_context;

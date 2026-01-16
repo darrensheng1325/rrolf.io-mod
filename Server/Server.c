@@ -227,39 +227,19 @@ void rr_server_client_broadcast_update(struct rr_server_client *this)
     char joined_code[16];
     sprintf(joined_code, "%s-%s", server->server_alias, squad->squad_code);
     proto_bug_write_string(&encoder, joined_code, 16, "squad code");
-    uint8_t in_game = this->player_info != NULL;
-    proto_bug_write_uint8(&encoder, in_game, "in game");
-    printf("<rr_server::broadcast_update::player_info=%p::in_game=%u>\n", 
-           (void*)this->player_info, (unsigned)in_game);
+    proto_bug_write_uint8(&encoder, this->player_info != NULL, "in game");
     if (this->player_info != NULL)
         rr_simulation_write_binary(&server->simulation, &encoder,
                                    this->player_info);
-    // Copy the update message before reusing the buffer
-    uint32_t update_size = encoder.current - encoder.start;
-    uint8_t *update_copy = malloc(update_size);
-    memcpy(update_copy, encoder.start, update_size);
-    printf("<rr_server::broadcast_update::sending_message::size=%u::about_to_call_write_message>\n", (unsigned)update_size);
-    fflush(stdout); // Force flush to ensure log appears
-    rr_server_client_write_message(this, update_copy, update_size);
-    printf("<rr_server::broadcast_update::write_message_returned>\n");
-    fflush(stdout);
-    free(update_copy);
-    
-    // Use a fresh encoder for the animation update to avoid buffer corruption
-    // Use a different part of the buffer (offset by MESSAGE_BUFFER_SIZE/2 to avoid overlap)
-    struct proto_bug animation_encoder;
-    proto_bug_init(&animation_encoder, outgoing_message + (MESSAGE_BUFFER_SIZE / 2));
-    proto_bug_write_uint8(&animation_encoder, rr_clientbound_animation_update, "header");
+    rr_server_client_write_message(this, encoder.start,
+                                   encoder.current - encoder.start);
+    proto_bug_init(&encoder, outgoing_message);
+    proto_bug_write_uint8(&encoder, rr_clientbound_animation_update, "header");
     for (uint32_t i = 0; i < simulation->animation_length; ++i)
-        write_animation_function(simulation, &animation_encoder, this, i);
-    proto_bug_write_uint8(&animation_encoder, 0, "continue");
-    
-    // Copy the animation message before sending
-    uint32_t animation_size = animation_encoder.current - animation_encoder.start;
-    uint8_t *animation_copy = malloc(animation_size);
-    memcpy(animation_copy, animation_encoder.start, animation_size);
-    rr_server_client_write_message(this, animation_copy, animation_size);
-    free(animation_copy);
+        write_animation_function(simulation, &encoder, this, i);
+    proto_bug_write_uint8(&encoder, 0, "continue");
+    rr_server_client_write_message(this, encoder.start,
+                                   encoder.current - encoder.start);
 }
 
 static void delete_entity_function(EntityIdx entity, void *_captures)
@@ -281,11 +261,7 @@ void rr_server_init(struct rr_server *this)
     // RR_GLOBAL_BIOME = rr_biome_id_garden;
 #endif
     rr_static_data_init();
-#ifdef RR_WORKER_MODE
-    rr_simulation_init_server(&this->simulation);
-#else
     rr_simulation_init(&this->simulation);
-#endif
     for (uint32_t i = 0; i < RR_SQUAD_COUNT; ++i)
         rr_squad_init(&this->squads[i], this, i);
 }
@@ -901,6 +877,15 @@ static int handle_lws_event(struct rr_server *this, struct lws *ws,
 // This function is available in both normal and worker mode
 void server_handle_client_message(struct rr_server *this, struct rr_server_client *client, struct proto_bug *encoder, uint8_t header)
 {
+    uint64_t encoder_pos_before = encoder->current - encoder->start;
+    uint64_t encoder_bound = encoder->end - encoder->start;
+    printf("<rr_server::handle_client_message::header=0x%02x::encoder_pos=%llu::encoder_bound=%llu::encoder_start=%p::encoder_current=%p::encoder_end=%p>\n",
+           (unsigned)header,
+           (unsigned long long)encoder_pos_before,
+           (unsigned long long)encoder_bound,
+           (void*)encoder->start,
+           (void*)encoder->current,
+           (void*)encoder->end);
     switch (header)
     {
     case rr_serverbound_input:
@@ -915,11 +900,24 @@ void server_handle_client_message(struct rr_server *this, struct rr_server_clien
             printf("<rr_server::input_rejected::no_flower_id>\n");
             break;
         }
+        uint64_t pos_before_speed = encoder->current - encoder->start;
         if (client->dev)
             client->speed_percent =
                 20 * proto_bug_read_float32(encoder, "speed_percent");
+        uint64_t pos_after_speed = encoder->current - encoder->start;
+        if (client->dev)
+            printf("<rr_server::read_speed_percent::before=%llu::after=%llu::value=%f>\n",
+                   (unsigned long long)pos_before_speed,
+                   (unsigned long long)pos_after_speed,
+                   client->speed_percent);
+        uint64_t pos_before_flags = encoder->current - encoder->start;
         uint8_t movementFlags =
             proto_bug_read_uint8(encoder, "movement kb flags");
+        uint64_t pos_after_flags = encoder->current - encoder->start;
+        printf("<rr_server::read_movement_flags::before=%llu::after=%llu::flags=0x%02x>\n",
+               (unsigned long long)pos_before_flags,
+               (unsigned long long)pos_after_flags,
+               (unsigned)movementFlags);
         float x = 0;
         float y = 0;
 
@@ -939,8 +937,14 @@ void server_handle_client_message(struct rr_server *this, struct rr_server_clien
         }
         else
         {
+            uint64_t pos_before_mouse = encoder->current - encoder->start;
             x = proto_bug_read_float32(encoder, "mouse x");
             y = proto_bug_read_float32(encoder, "mouse y");
+            uint64_t pos_after_mouse = encoder->current - encoder->start;
+            printf("<rr_server::read_mouse::before=%llu::after=%llu::x=%f::y=%f>\n",
+                   (unsigned long long)pos_before_mouse,
+                   (unsigned long long)pos_after_mouse,
+                   x, y);
             if ((x != 0 || y != 0) && fabsf(x) < 10000 && fabsf(y) < 10000)
             {
                 float mag_1 = sqrtf(x * x + y * y);
@@ -962,6 +966,10 @@ void server_handle_client_message(struct rr_server *this, struct rr_server_clien
         }
 
         client->player_info->input = (movementFlags >> 4) & 3;
+        uint64_t encoder_pos_after = encoder->current - encoder->start;
+        printf("<rr_server::handle_input_complete::encoder_pos_after=%llu::bytes_read=%llu>\n",
+               (unsigned long long)encoder_pos_after,
+               (unsigned long long)(encoder_pos_after - encoder_pos_before));
         break;
     }
     case rr_serverbound_petal_switch:
@@ -1051,62 +1059,6 @@ void server_handle_client_message(struct rr_server *this, struct rr_server_clien
         client->ticks_to_next_squad_action = 10;
         if (!client->in_squad)
         {
-            // In single-player mode, create a squad for the client
-            #ifdef RR_WORKER_MODE
-            uint8_t squad = rr_client_create_squad(this, client);
-            if (squad == RR_ERROR_CODE_INVALID_SQUAD)
-            {
-                printf("<rr_server::squad_ready::failed_to_create_squad>\n");
-                struct proto_bug failure;
-                proto_bug_init(&failure, outgoing_message);
-                proto_bug_write_uint8(&failure, rr_clientbound_squad_fail,
-                                      "header");
-                proto_bug_write_uint8(&failure, 0, "fail type");
-                rr_server_client_write_message(
-                    client, failure.start, failure.current - failure.start);
-                client->in_squad = 0;
-                client->pending_quick_join = 0;
-                break;
-            }
-            rr_client_join_squad(this, client, squad);
-            client->pending_quick_join = 1;
-            printf("<rr_server::squad_ready::joined_squad=%u::in_squad=%d>\n", squad, client->in_squad);
-            // Immediately create player info and flower for single-player mode
-            if (client->in_squad && rr_squad_get_client_slot(this, client)->playing == 0)
-            {
-                // Check if player_info already exists (prevent duplicate creation)
-                if (client->player_info != NULL)
-                {
-                    printf("<rr_server::squad_ready::player_already_exists::skipping_creation>\n");
-                    rr_squad_get_client_slot(this, client)->playing = 1;
-                    // Still send update message
-                    extern void rr_server_client_broadcast_update(struct rr_server_client *client);
-                    rr_server_client_broadcast_update(client);
-                }
-                else
-                {
-                    printf("<rr_server::squad_ready::creating_player>\n");
-                    rr_squad_get_client_slot(this, client)->playing = 1;
-                    rr_server_client_create_player_info(this, client);
-                    if (client->player_info != NULL)
-                    {
-                        rr_server_client_create_flower(client);
-                        printf("<rr_server::squad_ready::player_created::player_info=%p::flower_id=%u>\n",
-                               (void*)client->player_info, 
-                               client->player_info ? client->player_info->flower_id : 0);
-                        // Send update message to client so it knows the game has started
-                        extern void rr_server_client_broadcast_update(struct rr_server_client *client);
-                        rr_server_client_broadcast_update(client);
-                        printf("<rr_server::squad_ready::sent_update_message>\n");
-                    }
-                    else
-                    {
-                        printf("<rr_server::squad_ready::failed_to_create_player_info>\n");
-                        rr_squad_get_client_slot(this, client)->playing = 0;
-                    }
-                }
-            }
-            #else
             uint8_t squad = rr_client_find_squad(this, client);
             if (squad == RR_ERROR_CODE_INVALID_SQUAD)
             {
@@ -1136,7 +1088,6 @@ void server_handle_client_message(struct rr_server *this, struct rr_server_clien
             }
             rr_client_join_squad(this, client, squad);
             client->pending_quick_join = 1;
-            #endif
         }
         else if (client->in_squad)
         {

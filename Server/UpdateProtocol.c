@@ -48,27 +48,15 @@ static void rr_simulation_write_entity_function(uint64_t _id, void *_captures)
 
     proto_bug_write_varuint(encoder, id, "entity update id");
 
-    uint32_t component_flags = simulation->entity_tracker[id];
     uint8_t is_creation = 0;
 
-    // Check if entity was in old view - if not, it's a creation
-    uint8_t was_in_old_view = rr_bitset_get_bit(player_info->entities_in_view, id);
-    
-    if (!was_in_old_view)
+    if (!rr_bitset_get_bit(player_info->entities_in_view, id))
     {
-        // Entity is new to this client - treat as creation
         is_creation = 1;
         rr_bitset_set(player_info->entities_in_view, id);
     }
-    else if (!entity_alive(simulation, id))
-    {
-        // Entity was in old view but doesn't exist on server anymore
-        // This shouldn't happen, but if it does, clear the stale entry
-        // and treat as creation (entity will be recreated)
-        rr_bitset_unset(player_info->entities_in_view, id);
-        is_creation = 1;
-        rr_bitset_set(player_info->entities_in_view, id);
-    }
+
+    uint32_t component_flags = simulation->entity_tracker[id];
     proto_bug_write_uint8(encoder, is_creation, "upcreate");
     proto_bug_write_varuint(encoder, component_flags, "entity component flags");
 #define XX(COMPONENT, ID)                                                      \

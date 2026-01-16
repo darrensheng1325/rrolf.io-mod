@@ -20,8 +20,13 @@
 
 #include <Shared/Entity.h>
 #include <Shared/SimulationCommon.h>
-#include <Shared/StaticData.h>
 #include <Shared/pb.h>
+#ifdef RR_SERVER
+#include <Shared/StaticData.h>
+#endif
+#ifdef RR_CLIENT
+#include <Shared/StaticData.h> // Needed to set maze pointer in single-player mode
+#endif
 
 #ifdef RR_SERVER
 #include <math.h>
@@ -110,5 +115,8 @@ void rr_component_arena_read(struct rr_component_arena *this,
 #define X(NAME, TYPE) RR_DECODE_PUBLIC_FIELD(NAME, TYPE);
     FOR_EACH_PUBLIC_FIELD
 #undef X
+    // Set maze pointer based on biome (needed for both client and server in single-player mode)
+    // The maze pointer is needed for tick_maze and rendering
+    this->maze = &RR_MAZES[this->biome];
 }
 #endif
