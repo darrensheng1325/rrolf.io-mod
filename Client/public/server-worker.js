@@ -103,8 +103,8 @@ function tick() {
             console.error('[Worker] Error in tick:', error);
         }
     }
-    // Run at ~60 ticks per second (16.67ms per tick) for better responsiveness
-    setTimeout(tick, 16);
+    // Run at ~25 ticks per second (40ms per tick) to match server tickrate
+    setTimeout(tick, 40);
 }
 
 function handleMessage(event) {

@@ -130,6 +130,12 @@ EntityIdx rr_simulation_alloc_petal(struct rr_simulation *this, EntityIdx arena,
     rr_component_physical_set_angle(physical, rr_frand() * M_PI * 2);
     rr_component_physical_set_x(physical, x);
     rr_component_physical_set_y(physical, y);
+    // Ensure arena is valid (not 0)
+    if (arena == 0)
+    {
+        printf("<rr_server::alloc_petal::arena_is_zero::fixing_to_1::x=%f::y=%f>\n", x, y);
+        arena = 1;
+    }
     physical->arena = arena;
     physical->mass = 5;
     physical->friction = 0.75;

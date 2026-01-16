@@ -505,6 +505,34 @@ static void rr_system_petal_reload_foreach_function(EntityIdx id,
         return;
     struct rr_component_physical *flower_physical =
         rr_simulation_get_physical(simulation, player_info->flower_id);
+    if (flower_physical == NULL)
+    {
+        printf("<rr_server::petal_reload::flower_physical_is_null::player_info_id=%u::flower_id=%u>\n",
+               (unsigned)id, (unsigned)player_info->flower_id);
+        return;
+    }
+    // Fix arena if it's 0 or doesn't match player_info
+    if (flower_physical->arena == 0 || flower_physical->arena != player_info->arena)
+    {
+        printf("<rr_server::petal_reload::fixing_flower_arena::flower_arena=%u::player_arena=%u::setting_to=%u>\n",
+               (unsigned)flower_physical->arena, (unsigned)player_info->arena,
+               (unsigned)(player_info->arena != 0 ? player_info->arena : 1));
+        flower_physical->arena = player_info->arena != 0 ? player_info->arena : 1;
+    }
+    // Ensure player_info->arena is set
+    if (player_info->arena == 0)
+    {
+        printf("<rr_server::petal_reload::fixing_player_arena::setting_to_1>\n");
+        rr_component_player_info_set_arena(player_info, 1);
+    }
+    // Check if flower is at 0,0 (which would cause petals to spawn at 0,0)
+    if (flower_physical->x == 0 && flower_physical->y == 0)
+    {
+        printf("<rr_server::petal_reload::flower_at_zero::player_info_id=%u::flower_id=%u::arena=%u>\n",
+               (unsigned)id, (unsigned)player_info->flower_id, (unsigned)flower_physical->arena);
+        // Don't spawn petals if flower is at 0,0
+        return;
+    }
     petal_modifiers(simulation, player_info);
     uint32_t rotation_pos = 0;
     for (uint64_t outer = 0; outer < player_info->slot_count; ++outer)
@@ -535,21 +563,70 @@ static void rr_system_petal_reload_foreach_function(EntityIdx id,
                 if (cd > max_cd)
                     max_cd = cd;
                 if (--p_petal->cooldown_ticks <= 0)
-                    p_petal->entity_hash = rr_simulation_get_entity_hash(
-                        simulation,
-                        rr_simulation_alloc_petal(
-                            simulation, player_info->arena, flower_physical->x,
-                            flower_physical->y, slot->id, slot->rarity,
-                            player_info->flower_id));
+                {
+                    // Ensure arena is valid before creating petal
+                    EntityIdx target_arena = player_info->arena != 0 ? player_info->arena : 1;
+                    EntityIdx petal_id = rr_simulation_alloc_petal(
+                        simulation, target_arena, flower_physical->x,
+                        flower_physical->y, slot->id, slot->rarity,
+                        player_info->flower_id);
+                    if (petal_id == RR_NULL_ENTITY)
+                    {
+                        printf("<rr_server::petal_reload::alloc_petal_failed::slot_id=%u::rarity=%u::x=%f::y=%f::arena=%u>\n",
+                               (unsigned)slot->id, (unsigned)slot->rarity,
+                               flower_physical->x, flower_physical->y,
+                               (unsigned)target_arena);
+                    }
+                    else
+                    {
+                        p_petal->entity_hash = rr_simulation_get_entity_hash(simulation, petal_id);
+                        printf("<rr_server::petal_reload::petal_created::petal_id=%u::slot_id=%u::rarity=%u::x=%f::y=%f::arena=%u>\n",
+                               (unsigned)petal_id, (unsigned)slot->id, (unsigned)slot->rarity,
+                               flower_physical->x, flower_physical->y,
+                               (unsigned)target_arena);
+                    }
+                }
             }
             else
             {
-                if (rr_simulation_get_physical(simulation, p_petal->entity_hash)
-                        ->arena != player_info->arena)
+                struct rr_component_physical *petal_physical =
+                    rr_simulation_get_physical(simulation, p_petal->entity_hash);
+                if (petal_physical == NULL)
                 {
-                    rr_simulation_request_entity_deletion(simulation,
-                                                          p_petal->entity_hash);
+                    printf("<rr_server::petal_reload::petal_physical_is_null::petal_hash=%u>\n",
+                           (unsigned)p_petal->entity_hash);
+                    p_petal->entity_hash = RR_NULL_ENTITY;
+                    p_petal->cooldown_ticks = data->cooldown;
                     continue;
+                }
+                // Fix arena mismatch by setting petal arena to match player_info
+                if (petal_physical->arena != player_info->arena)
+                {
+                    printf("<rr_server::petal_reload::arena_mismatch::petal_hash=%u::petal_arena=%u::player_arena=%u::fixing_arena>\n",
+                           (unsigned)p_petal->entity_hash,
+                           (unsigned)petal_physical->arena,
+                           (unsigned)player_info->arena);
+                    // Set petal arena to match player_info, or 1 if player_info->arena is 0
+                    uint32_t target_arena = player_info->arena != 0 ? player_info->arena : 1;
+                    petal_physical->arena = target_arena;
+                    printf("<rr_server::petal_reload::arena_fixed::petal_arena_now=%u>\n",
+                           (unsigned)petal_physical->arena);
+                }
+                // Also fix if petal arena is 0
+                if (petal_physical->arena == 0)
+                {
+                    printf("<rr_server::petal_reload::petal_arena_is_zero::petal_hash=%u::setting_to_1>\n",
+                           (unsigned)p_petal->entity_hash);
+                    petal_physical->arena = 1;
+                }
+                // Check if petal is stuck at 0,0
+                if (petal_physical->x == 0 && petal_physical->y == 0)
+                {
+                    printf("<rr_server::petal_reload::petal_stuck_at_zero::petal_hash=%u::resetting_position::flower_x=%f::flower_y=%f>\n",
+                           (unsigned)p_petal->entity_hash,
+                           flower_physical->x, flower_physical->y);
+                    rr_component_physical_set_x(petal_physical, flower_physical->x);
+                    rr_component_physical_set_y(petal_physical, flower_physical->y);
                 }
                 if (rr_simulation_has_mob(simulation, p_petal->entity_hash))
                 {

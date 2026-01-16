@@ -23,6 +23,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <sys/time.h>
 
 #ifdef RR_WORKER_MODE
 
@@ -86,6 +87,33 @@ void rr_server_shared_tick(void)
 {
     if (g_server == NULL)
         return;
+    
+    // Rate limit server ticks to ~25 ticks per second (40ms per tick)
+    static struct timeval last_tick_time = {0, 0};
+    struct timeval current_time;
+    gettimeofday(&current_time, NULL);
+    
+    if (last_tick_time.tv_sec == 0 && last_tick_time.tv_usec == 0)
+    {
+        // First tick, initialize
+        last_tick_time = current_time;
+    }
+    else
+    {
+        // Calculate elapsed time in microseconds
+        int64_t elapsed = (current_time.tv_sec - last_tick_time.tv_sec) * 1000000 +
+                         (current_time.tv_usec - last_tick_time.tv_usec);
+        
+        // Only tick if at least 40ms (40000 microseconds) have passed
+        // This limits to ~25 ticks per second
+        if (elapsed < 40000)
+        {
+            // Too soon, skip this tick
+            return;
+        }
+        
+        last_tick_time = current_time;
+    }
     
     // Process incoming messages from client
     if (g_shared_mem)

@@ -105,7 +105,7 @@ void rr_websocket_connect_to(struct rr_websocket *this, char const *link)
             Module.serverSocket = $0;
             Module.serverIncomingData = $2;
             
-            // Start server tick loop (runs at 60Hz)
+            // Start server tick loop (runs at 25Hz to match server tickrate)
             Module.serverTickInterval = setInterval(function() {
                 if (Module.serverSharedMemPtr) {
                     Module._rr_server_shared_tick();
@@ -136,7 +136,7 @@ void rr_websocket_connect_to(struct rr_websocket *this, char const *link)
                         Module._free(messagePtr);
                     }
                 }
-            }, 1000 / 60); // 60Hz
+            }, 40); // 25Hz (40ms per tick) to match server tickrate
             
             // Simulate connection open
             setTimeout(function() {
