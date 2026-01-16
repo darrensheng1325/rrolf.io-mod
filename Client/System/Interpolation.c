@@ -36,63 +36,18 @@ void system_interpolation_for_each_function(EntityIdx entity, void *_captures)
     {
         struct rr_component_physical *physical =
             rr_simulation_get_physical(this, entity);
-        // Initialize lerp values from actual positions if they haven't been set yet
-        // Only initialize if the actual position is non-zero (to avoid initializing to 0 when entity is just created)
-        // This ensures that when an entity is created at 0,0 and then receives its real position,
-        // the lerp values will be initialized to the real position, not 0
-        if (physical->lerp_x == 0 && physical->x != 0)
-        {
-            physical->lerp_x = physical->x;
-            printf("<rr_client::interpolation::initializing_lerp_x::physical_x=%f::lerp_x=%f>\n",
-                   physical->x, physical->lerp_x);
-        }
-        if (physical->lerp_y == 0 && physical->y != 0)
-        {
-            physical->lerp_y = physical->y;
-            printf("<rr_client::interpolation::initializing_lerp_y::physical_y=%f::lerp_y=%f>\n",
-                   physical->y, physical->lerp_y);
-        }
-
-        // Calculate velocity - if lerp values haven't been initialized yet (both are 0),
-        // this means the entity is still at 0,0 and hasn't received its real position yet
-        // In that case, set velocity to 0 to avoid incorrect calculations
-        if (physical->lerp_x == 0 && physical->lerp_y == 0 && physical->x == 0 && physical->y == 0)
-        {
-            // Entity is still at 0,0, hasn't received position update yet
-            physical->velocity.x = 0;
-            physical->velocity.y = 0;
-        }
-        else
-        {
-            // Normal velocity calculation
-            physical->velocity.x = physical->x - physical->lerp_x;
-            physical->velocity.y = physical->y - physical->lerp_y;
-        }
-
-        physical->lerp_x = rr_lerp(physical->lerp_x, physical->x, 10 * delta);
-        physical->lerp_y = rr_lerp(physical->lerp_y, physical->y, 10 * delta);
-        physical->lerp_velocity.x =
-            rr_lerp(physical->lerp_velocity.x, physical->velocity.x, 5 * delta);
-        physical->lerp_velocity.y =
-            rr_lerp(physical->lerp_velocity.y, physical->velocity.y, 5 * delta);
-        if (physical->lerp_angle == 0)
-            physical->lerp_angle = physical->angle;
-
-        physical->lerp_radius =
-            rr_lerp(physical->lerp_radius, physical->radius, 10 * delta);
-        physical->lerp_angle =
-            rr_angle_lerp(physical->lerp_angle, physical->angle, 10 * delta);
+        // REMOVED INTERPOLATION: Copy actual values directly to lerp values
+        physical->lerp_x = physical->x;
+        physical->lerp_y = physical->y;
+        physical->lerp_velocity.x = physical->velocity.x;
+        physical->lerp_velocity.y = physical->velocity.y;
+        physical->lerp_angle = physical->angle;
+        physical->lerp_radius = physical->radius;
         if (rr_simulation_has_mob(this, entity))
         {
             if (physical->turning_animation == 0)
                 physical->turning_animation = physical->angle;
-
-            physical->lerp_radius =
-                rr_lerp(physical->lerp_radius, physical->radius, 10 * delta);
-            physical->lerp_angle = rr_angle_lerp(physical->lerp_angle,
-                                                 physical->angle, 10 * delta);
-            physical->turning_animation = rr_angle_lerp(
-                physical->turning_animation, physical->angle, 6 * delta);
+            physical->turning_animation = physical->angle;
 
             physical->animation_timer +=
                 (2 * (physical->parent_id % 2) - 1) * delta *
@@ -113,56 +68,25 @@ void system_interpolation_for_each_function(EntityIdx entity, void *_captures)
             rr_simulation_get_physical(this, entity);
         flower->eye_x = cosf(flower->eye_angle - physical->angle) * 3;
         flower->eye_y = sinf(flower->eye_angle - physical->angle) * 3;
-        if (flower->lerp_eye_x == 0)
-            flower->lerp_eye_x = flower->eye_x;
-        if (flower->lerp_eye_y == 0)
-            flower->lerp_eye_y = flower->eye_y;
-        if (flower->lerp_mouth == 0)
-            flower->lerp_mouth = 15;
-        flower->lerp_eye_x =
-            rr_lerp(flower->lerp_eye_x, flower->eye_x, 20 * delta);
-        flower->lerp_eye_y =
-            rr_lerp(flower->lerp_eye_y, flower->eye_y, 20 * delta);
+        // REMOVED INTERPOLATION: Copy actual values directly to lerp values
+        flower->lerp_eye_x = flower->eye_x;
+        flower->lerp_eye_y = flower->eye_y;
         if (flower->face_flags & 1)
-            flower->lerp_mouth = rr_lerp(flower->lerp_mouth, 5, 20 * delta);
+            flower->lerp_mouth = 5;
         else if (flower->face_flags & 2)
-            flower->lerp_mouth = rr_lerp(flower->lerp_mouth, 8, 20 * delta);
+            flower->lerp_mouth = 8;
         else
-            flower->lerp_mouth = rr_lerp(flower->lerp_mouth, 15, 20 * delta);
+            flower->lerp_mouth = 15;
     }
 
     if (rr_simulation_has_player_info(this, entity))
     {
         struct rr_component_player_info *player_info =
             rr_simulation_get_player_info(this, entity);
-        if (player_info->lerp_camera_fov == 0)
-            player_info->lerp_camera_fov = player_info->camera_fov;
-        // Initialize lerp values from camera values if they haven't been set yet
-        // Always initialize if lerp is 0, even if camera is also 0 (will lerp to correct value)
-        if (player_info->lerp_camera_x == 0)
-        {
-            player_info->lerp_camera_x = player_info->camera_x;
-            if (player_info->camera_x != 0)
-            {
-                printf("<rr_client::interpolation::initializing_lerp_camera_x::camera_x=%f::lerp_camera_x=%f>\n",
-                       player_info->camera_x, player_info->lerp_camera_x);
-            }
-        }
-        if (player_info->lerp_camera_y == 0)
-        {
-            player_info->lerp_camera_y = player_info->camera_y;
-            if (player_info->camera_y != 0)
-            {
-                printf("<rr_client::interpolation::initializing_lerp_camera_y::camera_y=%f::lerp_camera_y=%f>\n",
-                       player_info->camera_y, player_info->lerp_camera_y);
-            }
-        }
-        player_info->lerp_camera_fov = rr_lerp(
-            player_info->lerp_camera_fov, player_info->camera_fov, 15 * delta);
-        player_info->lerp_camera_x = rr_lerp(player_info->lerp_camera_x,
-                                             player_info->camera_x, 10 * delta);
-        player_info->lerp_camera_y = rr_lerp(player_info->lerp_camera_y,
-                                             player_info->camera_y, 10 * delta);
+        // REMOVED INTERPOLATION: Copy actual values directly to lerp values
+        player_info->lerp_camera_fov = player_info->camera_fov;
+        player_info->lerp_camera_x = player_info->camera_x;
+        player_info->lerp_camera_y = player_info->camera_y;
     }
 
     if (rr_simulation_has_health(this, entity))
@@ -176,10 +100,8 @@ void system_interpolation_for_each_function(EntityIdx entity, void *_captures)
             if (health->damage_animation < 0.25)
                 health->damage_animation = 1;
         }
-        if (health->lerp_health == 0)
-            health->lerp_health = health->health;
-        health->lerp_health =
-            rr_lerp(health->lerp_health, health->health, 25 * delta);
+        // REMOVED INTERPOLATION: Copy actual values directly to lerp values
+        health->lerp_health = health->health;
     }
 }
 
