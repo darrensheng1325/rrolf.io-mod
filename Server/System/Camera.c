@@ -18,6 +18,8 @@
 #include <Server/Simulation.h>
 #include <Shared/Entity.h>
 #include <Shared/Vector.h>
+#include <math.h>
+#include <stdio.h>
 
 void rr_system_camera_tick(struct rr_simulation *this)
 {
@@ -29,7 +31,8 @@ void rr_system_camera_tick(struct rr_simulation *this)
         {
             struct rr_component_physical *physical =
                 rr_simulation_get_physical(this, player_info->flower_id);
-            if (physical->x > 10000 || physical->y > 10000 || physical->x < -10000 || physical->y < -10000)
+            // Check for actual corruption (NaN/Inf) instead of large but valid positions
+            if (isnan(physical->x) || isnan(physical->y) || isinf(physical->x) || isinf(physical->y))
             {
                 printf("<rr_server::camera_tick::CORRUPTED_POSITION::flower_id=%u::x=%f::y=%f>\n",
                        (unsigned)player_info->flower_id, physical->x, physical->y);

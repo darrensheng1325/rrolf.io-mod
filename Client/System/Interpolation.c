@@ -114,23 +114,23 @@ void system_interpolation_for_each_function(EntityIdx entity, void *_captures)
         if (player_info->lerp_camera_fov == 0)
             player_info->lerp_camera_fov = player_info->camera_fov;
         // Initialize lerp values from camera values if they haven't been set yet
-        // Check if lerp is 0 and camera is not 0, or if lerp is 0 and we should initialize
+        // Always initialize if lerp is 0, even if camera is also 0 (will lerp to correct value)
         if (player_info->lerp_camera_x == 0)
         {
+            player_info->lerp_camera_x = player_info->camera_x;
             if (player_info->camera_x != 0)
             {
                 printf("<rr_client::interpolation::initializing_lerp_camera_x::camera_x=%f::lerp_camera_x=%f>\n",
                        player_info->camera_x, player_info->lerp_camera_x);
-                player_info->lerp_camera_x = player_info->camera_x;
             }
         }
         if (player_info->lerp_camera_y == 0)
         {
+            player_info->lerp_camera_y = player_info->camera_y;
             if (player_info->camera_y != 0)
             {
                 printf("<rr_client::interpolation::initializing_lerp_camera_y::camera_y=%f::lerp_camera_y=%f>\n",
                        player_info->camera_y, player_info->lerp_camera_y);
-                player_info->lerp_camera_y = player_info->camera_y;
             }
         }
         player_info->lerp_camera_fov = rr_lerp(

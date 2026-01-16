@@ -16,6 +16,7 @@
 #include <Client/Renderer/ComponentRender.h>
 
 #include <math.h>
+#include <assert.h>
 
 #include <Client/Assets/Render.h>
 #include <Client/Assets/RenderFunctions.h>
@@ -66,35 +67,10 @@ void render_background(struct rr_component_player_info *player_info,
 #undef GRID_SIZE
     struct rr_component_arena *arena =
         rr_simulation_get_arena(this->simulation, player_info->arena);
-    if (arena == NULL)
-    {
-        printf("<rr_client::render_background::arena_is_null>\n");
-        return;
-    }
-    if (arena->maze == NULL)
-    {
-        printf("<rr_client::render_background::maze_is_null::arena=%p::biome=%u>\n",
-               (void*)arena, (unsigned)arena->biome);
-        // Try to fix it
-        if (arena->biome < rr_biome_id_max)
-        {
-            arena->maze = &RR_MAZES[arena->biome];
-            printf("<rr_client::render_background::maze_fixed::maze=%p>\n", (void*)arena->maze);
-        }
-        else
-        {
-            return;
-        }
-    }
-    float grid_size = arena->maze->grid_size;
-    uint32_t maze_dim = arena->maze->maze_dim;
-    struct rr_maze_grid *grid = arena->maze->maze;
-    if (grid == NULL)
-    {
-        printf("<rr_client::render_background::grid_is_null::maze=%p::maze_dim=%u::grid_size=%f>\n",
-               (void*)arena->maze, (unsigned)maze_dim, grid_size);
-        return;
-    }
+    assert(arena != NULL);
+    float grid_size = RR_MAZES[arena->biome].grid_size;
+    uint32_t maze_dim = RR_MAZES[arena->biome].maze_dim;
+    struct rr_maze_grid *grid = RR_MAZES[arena->biome].maze;
     rr_renderer_set_fill(renderer, 0xff000000);
     rr_renderer_set_global_alpha(renderer, 0.5f);
     int32_t nx = floorf(leftX / grid_size);
@@ -102,7 +78,6 @@ void render_background(struct rr_component_player_info *player_info,
 #define TILE_SIZE (256.0f)
     double tileLeftX = floorf(leftX / TILE_SIZE) * TILE_SIZE;
     double tileTopY = floorf(topY / TILE_SIZE) * TILE_SIZE;
-    uint32_t tiles_rendered = 0;
     for (; tileLeftX < rightX; tileLeftX += TILE_SIZE)
     {
         for (double tileY = tileTopY; tileY < bottomY; tileY += TILE_SIZE)
@@ -110,10 +85,9 @@ void render_background(struct rr_component_player_info *player_info,
             int32_t tile_nx = floorf(tileLeftX / grid_size);
             int32_t tile_ny = floorf(tileY / grid_size);
             uint8_t tile =
-                (tile_nx < 0 || tile_ny < 0 || tile_nx >= (int32_t)maze_dim || tile_ny >= (int32_t)maze_dim)
+                (tile_nx < 0 || tile_ny < 0 || tile_nx >= maze_dim || tile_ny >= maze_dim)
                     ? 0
                     : grid[tile_ny * maze_dim + tile_nx].value;
-            tiles_rendered++;
             struct rr_renderer_context_state tile_state;
             rr_renderer_context_state_init(renderer, &tile_state);
             rr_renderer_translate(renderer, tileLeftX + TILE_SIZE / 2,
@@ -139,11 +113,6 @@ void render_background(struct rr_component_player_info *player_info,
         }
     }
 #undef TILE_SIZE
-    if (tiles_rendered == 0)
-    {
-        printf("<rr_client::render_background::no_tiles_rendered::leftX=%f::rightX=%f::topY=%f::bottomY=%f::lerp_camera_x=%f::lerp_camera_y=%f::grid_size=%f::maze_dim=%u>\n",
-               leftX, rightX, topY, bottomY, player_info->lerp_camera_x, player_info->lerp_camera_y, grid_size, (unsigned)maze_dim);
-    }
 }
 
 void rr_component_arena_render(EntityIdx entity, struct rr_game *this,
