@@ -37,6 +37,7 @@ void system_interpolation_for_each_function(EntityIdx entity, void *_captures)
         struct rr_component_physical *physical =
             rr_simulation_get_physical(this, entity);
         // REMOVED INTERPOLATION: Copy actual values directly to lerp values
+        // This reveals network jitter and synchronization issues
         physical->lerp_x = physical->x;
         physical->lerp_y = physical->y;
         physical->lerp_velocity.x = physical->velocity.x;
