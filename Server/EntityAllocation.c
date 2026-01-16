@@ -49,10 +49,12 @@ EntityIdx rr_simulation_alloc_player(struct rr_simulation *this,
         rr_simulation_add_relations(this, flower_id);
     struct rr_component_arena *arena = rr_simulation_get_arena(this, arena_id);
     struct rr_spawn_zone *respawn_zone = &arena->respawn_zone;
-    rr_component_physical_set_x(
-        physical, respawn_zone->x + 2 * arena->maze->grid_size * rr_frand());
-    rr_component_physical_set_y(
-        physical, respawn_zone->y + 2 * arena->maze->grid_size * rr_frand());
+    float spawn_x = respawn_zone->x + 2 * arena->maze->grid_size * rr_frand();
+    float spawn_y = respawn_zone->y + 2 * arena->maze->grid_size * rr_frand();
+    printf("<rr_server::alloc_player::respawn_zone::x=%f::y=%f::grid_size=%f::spawn_x=%f::spawn_y=%f>\n",
+           respawn_zone->x, respawn_zone->y, arena->maze->grid_size, spawn_x, spawn_y);
+    rr_component_physical_set_x(physical, spawn_x);
+    rr_component_physical_set_y(physical, spawn_y);
     rr_component_physical_set_radius(physical, 25.0f);
     physical->mass = 10;
     physical->arena = arena_id;

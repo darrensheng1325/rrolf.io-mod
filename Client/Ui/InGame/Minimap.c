@@ -68,6 +68,28 @@ static void minimap_on_render(struct rr_ui_element *this, struct rr_game *game)
     double scale = player_info->lerp_camera_fov * 0.25;
     struct rr_component_arena *arena =
         rr_simulation_get_arena(game->simulation, player_info->arena);
+    if (arena == NULL)
+    {
+        printf("<rr_client::minimap::arena_is_null>\n");
+        return;
+    }
+    if (arena->maze == NULL)
+    {
+        printf("<rr_client::minimap::maze_is_null::arena=%p::biome=%u::maze_dim=%u::grid_size=%f>\n",
+               (void*)arena, (unsigned)arena->biome,
+               (unsigned)(arena->maze ? arena->maze->maze_dim : 0),
+               arena->maze ? arena->maze->grid_size : 0.0f);
+        // Try to fix it
+        if (arena->biome < rr_biome_id_max)
+        {
+            arena->maze = &RR_MAZES[arena->biome];
+            printf("<rr_client::minimap::maze_fixed::maze=%p>\n", (void*)arena->maze);
+        }
+        else
+        {
+            return;
+        }
+    }
     float grid_size = RR_MAZES[arena->biome].grid_size;
     uint32_t maze_dim = RR_MAZES[arena->biome].maze_dim;
     struct rr_maze_grid *grid = RR_MAZES[arena->biome].maze;
@@ -76,6 +98,11 @@ static void minimap_on_render(struct rr_ui_element *this, struct rr_game *game)
                   this->abs_width;
     double midY = (player_info->lerp_camera_y / (grid_size * maze_dim) - 0.5) *
                   this->abs_height;
+    if (player_info->lerp_camera_x == 0 && player_info->lerp_camera_y == 0)
+    {
+        printf("<rr_client::minimap::lerp_camera_is_zero::camera_x=%f::camera_y=%f::lerp_camera_x=%f::lerp_camera_y=%f>\n",
+               player_info->camera_x, player_info->camera_y, player_info->lerp_camera_x, player_info->lerp_camera_y);
+    }
     double W =
         renderer->width / scale / (grid_size * maze_dim) * this->abs_width;
     double H =

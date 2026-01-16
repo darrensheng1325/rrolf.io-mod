@@ -15,6 +15,8 @@
 
 #include <Shared/Component/Physical.h>
 
+#include <math.h>
+#include <stdio.h>
 #include <string.h>
 
 #include <Shared/pb.h>
@@ -55,10 +57,27 @@ void rr_component_physical_write(struct rr_component_physical *this,
                                  struct rr_component_player_info *client)
 {
     uint64_t state = this->protocol_state | (state_flags_all * is_creation);
+    uint64_t encoder_pos_before = encoder->current - encoder->start;
     proto_bug_write_varuint(encoder, state, "physical component state");
+    uint64_t encoder_pos_after_state = encoder->current - encoder->start;
+    
+    // Debug: log what we're writing
+    if (state & state_flags_x || state & state_flags_y)
+    {
+        printf("<rr_server::physical_write::state=0x%llx::x=%f::y=%f::encoder_before=%llu::encoder_after_state=%llu>\n",
+               (unsigned long long)state, this->x, this->y,
+               (unsigned long long)encoder_pos_before,
+               (unsigned long long)encoder_pos_after_state);
+    }
 #define X(NAME, TYPE) RR_ENCODE_PUBLIC_FIELD(NAME, TYPE);
     FOR_EACH_PUBLIC_FIELD
 #undef X
+    uint64_t encoder_pos_after = encoder->current - encoder->start;
+    if (state & state_flags_x || state & state_flags_y)
+    {
+        printf("<rr_server::physical_write::complete::bytes_written=%llu>\n",
+               (unsigned long long)(encoder_pos_after - encoder_pos_before));
+    }
 }
 
 RR_DEFINE_PUBLIC_FIELD(physical, float, x)
@@ -71,10 +90,38 @@ RR_DEFINE_PUBLIC_FIELD(physical, float, radius)
 void rr_component_physical_read(struct rr_component_physical *this,
                                 struct proto_bug *encoder)
 {
+    uint64_t encoder_pos_before = encoder->current - encoder->start;
     uint64_t state =
         proto_bug_read_varuint(encoder, "physical component state");
+    uint64_t encoder_pos_after_state = encoder->current - encoder->start;
+    
+    // Debug: log what we're reading
+    if (state & state_flags_x || state & state_flags_y)
+    {
+        printf("<rr_client::physical_read::state=0x%llx::encoder_before=%llu::encoder_after_state=%llu::state_bytes=%llu>\n",
+               (unsigned long long)state,
+               (unsigned long long)encoder_pos_before,
+               (unsigned long long)encoder_pos_after_state,
+               (unsigned long long)(encoder_pos_after_state - encoder_pos_before));
+    }
+    
+    float x_before = this->x;
+    float y_before = this->y;
 #define X(NAME, TYPE) RR_DECODE_PUBLIC_FIELD(NAME, TYPE);
     FOR_EACH_PUBLIC_FIELD
 #undef X
+    
+    uint64_t encoder_pos_after = encoder->current - encoder->start;
+    if (state & state_flags_x || state & state_flags_y)
+    {
+        printf("<rr_client::physical_read::complete::x_before=%f::x_after=%f::y_before=%f::y_after=%f::bytes_read=%llu>\n",
+               x_before, this->x, y_before, this->y,
+               (unsigned long long)(encoder_pos_after - encoder_pos_before));
+        // Check for corruption
+        if (isnan(this->x) || isnan(this->y) || isinf(this->x) || isinf(this->y))
+        {
+            printf("<rr_client::physical_read::CORRUPTION_DETECTED::x=%f::y=%f>\n", this->x, this->y);
+        }
+    }
 }
 #endif

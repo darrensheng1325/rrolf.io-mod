@@ -15,6 +15,7 @@
 
 #include <Shared/Component/PlayerInfo.h>
 
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -206,11 +207,40 @@ RR_DEFINE_PUBLIC_FIELD(player_info, uint8_t, squad_pos);
 void rr_component_player_info_read(struct rr_component_player_info *this,
     struct proto_bug *encoder)
 {
-uint64_t state =
-proto_bug_read_varuint(encoder, "player_info component state");
+    uint64_t encoder_pos_before = encoder->current - encoder->start;
+    uint64_t state =
+        proto_bug_read_varuint(encoder, "player_info component state");
+    uint64_t encoder_pos_after_state = encoder->current - encoder->start;
+    
+    // Debug: log what we're reading
+    if (state & state_flags_camera_x || state & state_flags_camera_y)
+    {
+        printf("<rr_client::player_info_read::state=0x%llx::camera_x_bit=%llu::camera_y_bit=%llu::encoder_before=%llu::encoder_after_state=%llu::state_bytes=%llu>\n",
+               (unsigned long long)state,
+               (unsigned long long)(state & state_flags_camera_x),
+               (unsigned long long)(state & state_flags_camera_y),
+               (unsigned long long)encoder_pos_before,
+               (unsigned long long)encoder_pos_after_state,
+               (unsigned long long)(encoder_pos_after_state - encoder_pos_before));
+    }
+    
+    float camera_x_before = this->camera_x;
+    float camera_y_before = this->camera_y;
 #define X(NAME, TYPE) RR_DECODE_PUBLIC_FIELD(NAME, TYPE);
 FOR_EACH_PUBLIC_FIELD
 #undef X
+    uint64_t encoder_pos_after = encoder->current - encoder->start;
+    if (state & state_flags_camera_x || state & state_flags_camera_y)
+    {
+        printf("<rr_client::player_info_read::complete::camera_x_before=%f::camera_x_after=%f::camera_y_before=%f::camera_y_after=%f::bytes_read=%llu>\n",
+               camera_x_before, this->camera_x, camera_y_before, this->camera_y,
+               (unsigned long long)(encoder_pos_after - encoder_pos_before));
+        // Check for corruption
+        if (isnan(this->camera_x) || isnan(this->camera_y) || isinf(this->camera_x) || isinf(this->camera_y))
+        {
+            printf("<rr_client::player_info_read::CORRUPTION_DETECTED::camera_x=%f::camera_y=%f>\n", this->camera_x, this->camera_y);
+        }
+    }
 if (state & state_flags_petals)
 {
 for (uint32_t i = 0; i < this->slot_count; ++i)

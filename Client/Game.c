@@ -635,6 +635,14 @@ void rr_game_websocket_on_event_function(enum rr_websocket_event_type type,
         // Reinitialize encoder (no decryption needed in single-player)
         proto_bug_init(&encoder, data);
         proto_bug_set_bound(&encoder, data + size);
+        // Validate encoder bounds
+        if (encoder.end < encoder.start || encoder.end - encoder.start < size)
+        {
+            printf("<rr_client::encoder_bounds_invalid::start=%p::end=%p::size=%llu::expected_size=%llu>\n",
+                   (void*)encoder.start, (void*)encoder.end, 
+                   (unsigned long long)(encoder.end - encoder.start),
+                   (unsigned long long)size);
+        }
         uint8_t h = proto_bug_read_uint8(&encoder, "header");
         printf("<rr_client::received_message::header=0x%02x::size=%llu>\n", h, (unsigned long long)size);
         if (h == rr_clientbound_update)
@@ -967,12 +975,17 @@ static void write_serverbound_packet_desktop(struct rr_game *this)
     proto_bug_write_uint8(&encoder2, movement_flags, "movement kb flags");
     if (this->cache.use_mouse)
     {
-        proto_bug_write_float32(
-            &encoder2, this->input_data->mouse_x - this->renderer->width / 2,
-            "mouse x");
-        proto_bug_write_float32(
-            &encoder2, this->input_data->mouse_y - this->renderer->height / 2,
-            "mouse y");
+
+        float mouse_x = this->input_data->mouse_x - this->renderer->width / 2;
+        float mouse_y = this->input_data->mouse_y - this->renderer->height / 2;
+        if (fabsf(mouse_x) > 10000 || fabsf(mouse_y) > 10000)
+        {
+            printf("<rr_client::write_mouse::CORRUPTED::mouse_x=%f::mouse_y=%f::input_mouse_x=%f::input_mouse_y=%f::renderer_width=%f::renderer_height=%f>\n",
+                   mouse_x, mouse_y, this->input_data->mouse_x, this->input_data->mouse_y,
+                   this->renderer->width, this->renderer->height);
+        }
+        proto_bug_write_float32(&encoder2, mouse_x, "mouse x");
+        proto_bug_write_float32(&encoder2, mouse_y, "mouse y");
     }
     rr_websocket_send(&this->socket, encoder2.current - encoder2.start);
 

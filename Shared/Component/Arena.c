@@ -117,6 +117,19 @@ void rr_component_arena_read(struct rr_component_arena *this,
 #undef X
     // Set maze pointer based on biome (needed for both client and server in single-player mode)
     // The maze pointer is needed for tick_maze and rendering
-    this->maze = &RR_MAZES[this->biome];
+    if (this->biome >= rr_biome_id_max)
+    {
+        printf("<rr_client::arena_read::invalid_biome::biome=%u::max=%u>\n",
+               (unsigned)this->biome, (unsigned)rr_biome_id_max);
+        this->maze = NULL;
+    }
+    else
+    {
+        this->maze = &RR_MAZES[this->biome];
+        printf("<rr_client::arena_read::maze_set::biome=%u::maze=%p::maze_dim=%u::grid_size=%f>\n",
+               (unsigned)this->biome, (void*)this->maze,
+               (unsigned)(this->maze ? this->maze->maze_dim : 0),
+               this->maze ? this->maze->grid_size : 0.0f);
+    }
 }
 #endif

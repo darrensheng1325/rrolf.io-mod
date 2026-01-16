@@ -195,6 +195,16 @@ void rr_server_shared_tick(void)
             struct proto_bug encoder;
             proto_bug_init(&encoder, message_buffer);
             proto_bug_set_bound(&encoder, message_buffer + size);
+            // Validate encoder bounds
+            if (encoder.end < encoder.start || encoder.end - encoder.start < size)
+            {
+                printf("<rr_server::encoder_bounds_invalid::start=%p::end=%p::size=%u::expected_size=%llu::skipping_message>\n",
+                       (void*)encoder.start, (void*)encoder.end, 
+                       (unsigned)size,
+                       (unsigned long long)(encoder.end - encoder.start));
+                size = rr_server_shared_get_client_message(message_buffer, sizeof(message_buffer));
+                continue;
+            }
             printf("<rr_server::shared_memory::message_received::size=%u::encoder_start=%p::encoder_end=%p::encoder_current=%p>\n",
                    (unsigned)size,
                    (void*)encoder.start,
@@ -228,14 +238,32 @@ uint32_t rr_server_shared_get_client_message(uint8_t *buffer, uint32_t max_size)
         return 0; // No messages
     
     // Read message size (first 4 bytes)
+    // Handle wrap-around: if size bytes cross buffer boundary, read in chunks
     uint32_t message_size = 0;
-    memcpy(&message_size, &g_shared_mem->client_to_server_buffer[read_pos], 4);
+    uint32_t size_read_pos = read_pos;
+    if (size_read_pos + 4 <= sizeof(g_shared_mem->client_to_server_buffer))
+    {
+        // Size fits in one chunk
+        memcpy(&message_size, &g_shared_mem->client_to_server_buffer[size_read_pos], 4);
+    }
+    else
+    {
+        // Size wraps around - read in two chunks
+        uint32_t first_chunk = sizeof(g_shared_mem->client_to_server_buffer) - size_read_pos;
+        uint32_t second_chunk = 4 - first_chunk;
+        memcpy((uint8_t*)&message_size, &g_shared_mem->client_to_server_buffer[size_read_pos], first_chunk);
+        memcpy((uint8_t*)&message_size + first_chunk, &g_shared_mem->client_to_server_buffer[0], second_chunk);
+    }
     read_pos = (read_pos + 4) % (sizeof(g_shared_mem->client_to_server_buffer));
     
-    if (message_size > max_size || message_size == 0)
+    // Validate message size
+    if (message_size > max_size || message_size == 0 || message_size > sizeof(g_shared_mem->client_to_server_buffer))
     {
-        // Skip invalid message
-        g_shared_mem->client_to_server_read_pos = (read_pos + message_size) % (sizeof(g_shared_mem->client_to_server_buffer));
+        printf("<rr_server::shared_get::invalid_message_size::size=%u::max=%u::read_pos=%u::write_pos=%u>\n", 
+               (unsigned)message_size, (unsigned)max_size, (unsigned)read_pos, (unsigned)write_pos);
+        // Skip invalid message - advance read_pos past the size bytes only
+        // Don't try to skip message_size bytes as it might be corrupted
+        g_shared_mem->client_to_server_read_pos = read_pos;
         return 0;
     }
     
@@ -331,16 +359,32 @@ uint32_t rr_client_shared_get_server_message(uint8_t *buffer, uint32_t max_size)
         return 0; // No messages
     
     // Read message size (first 4 bytes)
+    // Handle wrap-around: if size bytes cross buffer boundary, read in chunks
     uint32_t message_size = 0;
-    memcpy(&message_size, &g_shared_mem->server_to_client_buffer[read_pos], 4);
+    uint32_t size_read_pos = read_pos;
+    if (size_read_pos + 4 <= sizeof(g_shared_mem->server_to_client_buffer))
+    {
+        // Size fits in one chunk
+        memcpy(&message_size, &g_shared_mem->server_to_client_buffer[size_read_pos], 4);
+    }
+    else
+    {
+        // Size wraps around - read in two chunks
+        uint32_t first_chunk = sizeof(g_shared_mem->server_to_client_buffer) - size_read_pos;
+        uint32_t second_chunk = 4 - first_chunk;
+        memcpy((uint8_t*)&message_size, &g_shared_mem->server_to_client_buffer[size_read_pos], first_chunk);
+        memcpy((uint8_t*)&message_size + first_chunk, &g_shared_mem->server_to_client_buffer[0], second_chunk);
+    }
     read_pos = (read_pos + 4) % (sizeof(g_shared_mem->server_to_client_buffer));
     
-    if (message_size > max_size || message_size == 0)
+    // Validate message size
+    if (message_size > max_size || message_size == 0 || message_size > sizeof(g_shared_mem->server_to_client_buffer))
     {
-        printf("<rr_client::shared_get::invalid_message_size::size=%u::max=%u>\n", 
-               (unsigned)message_size, (unsigned)max_size);
-        // Skip invalid message
-        g_shared_mem->server_to_client_read_pos = (read_pos + message_size) % (sizeof(g_shared_mem->server_to_client_buffer));
+        printf("<rr_client::shared_get::invalid_message_size::size=%u::max=%u::read_pos=%u::write_pos=%u>\n", 
+               (unsigned)message_size, (unsigned)max_size, (unsigned)read_pos, (unsigned)write_pos);
+        // Skip invalid message - advance read_pos past the size bytes only
+        // Don't try to skip message_size bytes as it might be corrupted
+        g_shared_mem->server_to_client_read_pos = read_pos;
         return 0;
     }
     
@@ -384,8 +428,20 @@ void rr_client_shared_send_message(uint8_t *data, uint32_t size)
         return; // Buffer full, drop message
     }
     
-    // Write message size
-    memcpy(&g_shared_mem->client_to_server_buffer[write_pos], &size, 4);
+    // Write message size (handle wrap-around if needed)
+    if (write_pos + 4 <= sizeof(g_shared_mem->client_to_server_buffer))
+    {
+        // Size fits in one chunk
+        memcpy(&g_shared_mem->client_to_server_buffer[write_pos], &size, 4);
+    }
+    else
+    {
+        // Size wraps around - write in two chunks
+        uint32_t first_chunk = sizeof(g_shared_mem->client_to_server_buffer) - write_pos;
+        uint32_t second_chunk = 4 - first_chunk;
+        memcpy(&g_shared_mem->client_to_server_buffer[write_pos], (uint8_t*)&size, first_chunk);
+        memcpy(&g_shared_mem->client_to_server_buffer[0], (uint8_t*)&size + first_chunk, second_chunk);
+    }
     write_pos = (write_pos + 4) % (sizeof(g_shared_mem->client_to_server_buffer));
     
     // Write message data

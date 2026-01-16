@@ -100,8 +100,18 @@ void rr_simulation_read_binary(struct rr_game *game, struct proto_bug *encoder)
         if (id == RR_NULL_ENTITY)
             break;
         uint8_t is_creation = proto_bug_read_uint8(encoder, "upcreate");
+        uint64_t encoder_pos_before_flags = encoder->current - encoder->start;
         uint32_t component_flags =
             proto_bug_read_varuint(encoder, "entity component flags");
+        uint64_t encoder_pos_after_flags = encoder->current - encoder->start;
+        if (component_flags & (1 << 3) || component_flags & (1 << 1)) // physical or player_info
+        {
+            printf("<rr_client::read_entity::id=%u::is_creation=%u::component_flags=0x%x::encoder_before_flags=%llu::encoder_after_flags=%llu::flags_bytes=%llu>\n",
+                   (unsigned)id, (unsigned)is_creation, (unsigned)component_flags,
+                   (unsigned long long)encoder_pos_before_flags,
+                   (unsigned long long)encoder_pos_after_flags,
+                   (unsigned long long)(encoder_pos_after_flags - encoder_pos_before_flags));
+        }
 
         uint64_t encoder_pos_before_entity = encoder->current - encoder->start;
         if (is_creation)
@@ -122,15 +132,52 @@ void rr_simulation_read_binary(struct rr_game *game, struct proto_bug *encoder)
         else 
         {
             uint32_t expected_flags = this->entity_tracker[id];
-            if ((component_flags >> 1) != (expected_flags >> 1))
+            if (expected_flags == 0)
+            {
+                // Entity doesn't exist on client but server says it's an update
+                // This means the entity was created but we missed the creation message
+                // Treat it as a creation and add all components
+                printf("<rr_client::server_says_update_but_entity_missing::creating::id=%u::component_flags=0x%x::encoder_pos=%llu>\n",
+                       (unsigned)id, (unsigned)component_flags, (unsigned long long)encoder_pos_before_entity);
+                // First mark entity as existing (bit 0 = 1)
+                this->entity_tracker[id] = 1;
+                // Then add all components that the server is sending
+#define XX(COMPONENT, ID)                                                      \
+    if (component_flags & (1 << ID))                                           \
+        rr_simulation_add_##COMPONENT(this, id);
+                RR_FOR_EACH_COMPONENT
+#undef XX
+                // Verify the tracker matches what we expect
+                if (this->entity_tracker[id] != (1 | component_flags))
+                {
+                    printf("<rr_client::entity_creation_mismatch::id=%u::expected=0x%x::got=0x%x>\n",
+                           (unsigned)id, (unsigned)(1 | component_flags), (unsigned)this->entity_tracker[id]);
+                    this->entity_tracker[id] = 1 | component_flags;
+                }
+                printf("<rr_client::entity_created_from_update::id=%u::flags=0x%x>\n",
+                       (unsigned)id, (unsigned)this->entity_tracker[id]);
+            }
+            else if ((component_flags >> 1) != (expected_flags >> 1))
             {
                 printf(
-                    "protocol error: entity %d misaligned: expected 0x%x (>>1=%u) but got 0x%x (>>1=%u)::encoder_pos=%llu\n",
+                    "protocol error: entity %d misaligned: expected 0x%x (>>1=%u) but got 0x%x (>>1=%u)::encoder_pos_before_flags=%llu::encoder_pos_after_flags=%llu::flags_bytes=%llu\n",
                     id, expected_flags, (unsigned)(expected_flags >> 1), component_flags, (unsigned)(component_flags >> 1),
-                    (unsigned long long)encoder_pos_before_entity);
-                // CRITICAL: If component flags don't match, we need to fix the entity_tracker
-                // or skip reading components to avoid misalignment
-                // For now, update entity_tracker to match what server sent
+                    (unsigned long long)encoder_pos_before_flags, (unsigned long long)encoder_pos_after_flags,
+                    (unsigned long long)(encoder_pos_after_flags - encoder_pos_before_flags));
+                // Component flags changed - need to add missing components
+                // Add any components that are in component_flags but not in expected_flags
+                uint32_t missing_components = component_flags & ~expected_flags;
+                if (missing_components != 0)
+                {
+                    printf("<rr_client::adding_missing_components::id=%u::missing=0x%x>\n",
+                           (unsigned)id, (unsigned)missing_components);
+#define XX(COMPONENT, ID)                                                      \
+    if (missing_components & (1 << ID))                                        \
+        rr_simulation_add_##COMPONENT(this, id);
+                    RR_FOR_EACH_COMPONENT
+#undef XX
+                }
+                // Update entity_tracker to match what server sent
                 this->entity_tracker[id] = 1 | component_flags;
                 printf("<rr_client::entity_tracker_fixed::id=%u::new_flags=0x%x>\n",
                        (unsigned)id, (unsigned)this->entity_tracker[id]);

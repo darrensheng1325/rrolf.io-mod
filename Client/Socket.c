@@ -122,9 +122,10 @@ void rr_websocket_connect_to(struct rr_websocket *this, char const *link)
                         
                         if (size > 0) {
                             // Copy message data into incoming_data buffer
-                            // Use the same method as non-single-player mode for consistency
-                            const sourceArray = new Uint8Array(Module.HEAPU8.buffer, messagePtr, size);
-                            HEAPU8.set(sourceArray, $2);
+                            // Create a proper copy to avoid buffer corruption
+                            const sourceView = new Uint8Array(Module.HEAPU8.buffer, messagePtr, size);
+                            const destView = new Uint8Array(Module.HEAPU8.buffer, $2, size);
+                            destView.set(sourceView);
                             _rr_on_socket_event_emscripten($0, 2, $2, BigInt(size));
                             messagesReceived++;
                         } else {

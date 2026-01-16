@@ -161,7 +161,7 @@ extern "C"
 
     uint8_t proto_bug_read_uint8_internal(struct proto_bug *self)
     {
-        if (self->current > self->end)
+        if (self->end && self->current >= self->end)
             return 0;
         return RR_SECRET8 ^ 0 ^ *self->current++;
     }
@@ -206,9 +206,14 @@ extern "C"
     }
     float proto_bug_read_float32_internal(struct proto_bug *self)
     {
-        if (self->end && self->current + (sizeof(float)) > self->end)
+        // Check bounds - ensure we have at least 4 bytes available
+        if (self->end && self->current + sizeof(float) > self->end)
+            return 0;
+        if (self->end && self->current >= self->end)
             return 0;
         float data;
+        // Use memcpy to avoid alignment issues - it handles unaligned reads correctly
+        // memcpy is safe for unaligned access on all modern architectures
         memcpy(&data, self->current, sizeof data);
         self->current += sizeof data;
         return data;
@@ -230,9 +235,26 @@ extern "C"
 
         do
         {
+            // Check bounds before reading
+            if (self->end && self->current >= self->end)
+            {
+                // Hit end of buffer - return 0 to indicate error
+                // This prevents infinite loops and misalignment
+                return 0;
+            }
             byte = proto_bug_read_uint8_internal(self);
+            // If we read 0 due to bounds check, stop reading
+            if (byte == 0 && self->end && self->current > self->end)
+            {
+                return 0;
+            }
             data |= ((byte & 254ull) << shift) >> 1;
             shift += 7ull;
+            // Prevent infinite loop - varuint should not exceed 10 bytes (64 bits / 7 bits per byte)
+            if (shift > 70ull)
+            {
+                return 0;
+            }
         } while (byte & 1ull);
 
         return data;

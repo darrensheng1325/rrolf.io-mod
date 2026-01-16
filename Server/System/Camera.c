@@ -29,6 +29,11 @@ void rr_system_camera_tick(struct rr_simulation *this)
         {
             struct rr_component_physical *physical =
                 rr_simulation_get_physical(this, player_info->flower_id);
+            if (physical->x > 10000 || physical->y > 10000 || physical->x < -10000 || physical->y < -10000)
+            {
+                printf("<rr_server::camera_tick::CORRUPTED_POSITION::flower_id=%u::x=%f::y=%f>\n",
+                       (unsigned)player_info->flower_id, physical->x, physical->y);
+            }
             rr_component_player_info_set_camera_x(player_info, physical->x);
             rr_component_player_info_set_camera_y(player_info, physical->y);
             rr_component_player_info_set_arena(player_info, physical->arena);
