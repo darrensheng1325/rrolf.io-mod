@@ -43,12 +43,32 @@ uint8_t get_spawn_id(uint8_t biome, struct rr_maze_grid *zone)
     // Use explicit biome enum comparison instead of == 0
     double *table = (biome == rr_biome_id_hell_creek) ? RR_HELL_CREEK_MOB_ID_RARITY_COEFFICIENTS
                                                       : RR_GARDEN_MOB_ID_RARITY_COEFFICIENTS;
-    double seed = rr_frand();
-    uint8_t id = 0;
-    for (; id < rr_mob_id_max - 1; ++id)
-        if (seed <= table[id])
-            break;
-    return id;
+    
+    // Calculate total weight sum
+    double total_weight = 0.0;
+    for (uint8_t i = 0; i < rr_mob_id_max; ++i)
+    {
+        total_weight += table[i];
+    }
+    
+    // If no weights, return first mob (shouldn't happen)
+    if (total_weight <= 0.0)
+        return 0;
+    
+    // Generate random value between 0 and total_weight
+    double random_value = rr_frand() * total_weight;
+    
+    // Select mob based on weighted random
+    double cumulative = 0.0;
+    for (uint8_t id = 0; id < rr_mob_id_max; ++id)
+    {
+        cumulative += table[id];
+        if (random_value <= cumulative)
+            return id;
+    }
+    
+    // Fallback (shouldn't reach here)
+    return rr_mob_id_max - 1;
 }
 
 int should_spawn_at(uint8_t id, uint8_t rarity)

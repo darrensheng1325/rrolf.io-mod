@@ -209,7 +209,10 @@ static EntityIdx rr_simulation_alloc_mob_non_recursive(
                                    mob_data->health * rarity_scale->health);
     health->damage = mob_data->damage * rarity_scale->damage;
 
-    rr_component_relations_set_team(relations, team_id);
+    // Set team and explicitly mark protocol_state to ensure it's sent
+    // (even if team_id is 0, we need to send it on creation)
+    relations->team = team_id;
+    relations->protocol_state |= 0b000001; // state_flags_team
 
     return entity;
 }
@@ -252,7 +255,10 @@ EntityIdx rr_simulation_alloc_mob(struct rr_simulation *this,
         for (uint32_t i = 0; i < RR_SQUAD_COUNT; ++i)
             mob->squad_damage_counter[i] = 1e10;
     }
-    rr_component_relations_set_team(relations, team_id);
+    // Set team and explicitly mark protocol_state to ensure it's sent
+    // (even if team_id is 0, we need to send it on creation)
+    relations->team = team_id;
+    relations->protocol_state |= 0b000001; // state_flags_team
     rr_component_relations_update_root_owner(this, relations);
     if (mob_id == rr_mob_id_beehive)
     {

@@ -160,17 +160,25 @@ uint32_t RR_MOB_DIFFICULTY_COEFFICIENTS[rr_mob_id_max] = {
 
 double RR_HELL_CREEK_MOB_ID_RARITY_COEFFICIENTS[rr_mob_id_max] = {
     0,   //tric (disabled)
-    20, //trex
+    20,  //trex
     20,  //fern
     0.25,//tree
     30,  //pter
     30,  //dako
     0,   //pachy (disabled)
     20,  //ornith
-    0,  //anky (disabled)
-    1, //meteor
-    0,  //quetz
+    0,   //anky (disabled)
+    1,   //meteor
+    0,   //quetz (disabled)
     20,  //edmo
+    0,   //ant (garden only)
+    0,   //hornet (garden only)
+    0,   //dragonfly (garden only)
+    0,   //honeybee (garden only)
+    0,   //beehive (garden only)
+    0,   //spider (garden only)
+    0,   //house_centipede (garden only)
+    0,   //lanternfly (garden only)
 };
 double RR_GARDEN_MOB_ID_RARITY_COEFFICIENTS[rr_mob_id_max] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 1, 5, 10, 0.05, 10};
 
