@@ -106,11 +106,11 @@ void rr_simulation_read_binary(struct rr_game *game, struct proto_bug *encoder)
         uint64_t encoder_pos_after_flags = encoder->current - encoder->start;
         if (component_flags & (1 << 3) || component_flags & (1 << 1)) // physical or player_info
         {
-            printf("<rr_client::read_entity::id=%u::is_creation=%u::component_flags=0x%x::encoder_before_flags=%llu::encoder_after_flags=%llu::flags_bytes=%llu>\n",
-                   (unsigned)id, (unsigned)is_creation, (unsigned)component_flags,
-                   (unsigned long long)encoder_pos_before_flags,
-                   (unsigned long long)encoder_pos_after_flags,
-                   (unsigned long long)(encoder_pos_after_flags - encoder_pos_before_flags));
+            // printf("<rr_client::read_entity::id=%u::is_creation=%u::component_flags=0x%x::encoder_before_flags=%llu::encoder_after_flags=%llu::flags_bytes=%llu>\n",
+            //        (unsigned)id, (unsigned)is_creation, (unsigned)component_flags,
+            //        (unsigned long long)encoder_pos_before_flags,
+            //        (unsigned long long)encoder_pos_after_flags,
+            //        (unsigned long long)(encoder_pos_after_flags - encoder_pos_before_flags));
         }
 
         uint64_t encoder_pos_before_entity = encoder->current - encoder->start;

@@ -233,7 +233,11 @@ static void spawn_mob(struct rr_simulation *this, uint32_t grid_x,
     struct rr_maze_grid *grid =
         rr_component_arena_get_grid(arena, grid_x, grid_y);
     uint8_t id;
+    uint8_t rarity;
 
+    // Retry up to 10 times to find a valid mob that matches rarity requirements
+    for (uint32_t retry = 0; retry < 10; ++retry)
+    {
     if (grid->spawn_function != NULL && rr_frand() <
 #ifdef RIVET_BUILD
                                             0.75
@@ -244,10 +248,14 @@ static void spawn_mob(struct rr_simulation *this, uint32_t grid_x,
         id = grid->spawn_function();
     else
         id = get_spawn_id(arena->biome, grid);
-    uint8_t rarity =
+        rarity =
         get_spawn_rarity(grid->difficulty + grid->local_difficulty * 0.6);
-    if (!should_spawn_at(id, rarity))
+        if (should_spawn_at(id, rarity))
+            break;
+        // If this was the last retry and still invalid, give up
+        if (retry == 9)
         return;
+    }
     for (uint32_t n = 0; n < 10; ++n)
     {
         struct rr_vector pos = {(grid_x + rr_frand()) * arena->maze->grid_size,

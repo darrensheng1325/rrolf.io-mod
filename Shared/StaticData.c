@@ -180,7 +180,7 @@ double RR_HELL_CREEK_MOB_ID_RARITY_COEFFICIENTS[rr_mob_id_max] = {
     0,   //house_centipede (garden only)
     0,   //lanternfly (garden only)
 };
-double RR_GARDEN_MOB_ID_RARITY_COEFFICIENTS[rr_mob_id_max] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 1, 5, 10, 0.05, 10};
+double RR_GARDEN_MOB_ID_RARITY_COEFFICIENTS[rr_mob_id_max] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
 struct rr_petal_rarity_scale RR_PETAL_RARITY_SCALE[rr_rarity_id_max] = {
     {1.0, 240, 45},
@@ -227,8 +227,24 @@ double RR_DROP_RARITY_COEFFICIENTS[rr_rarity_id_exotic + 2] = {
 double RR_MOB_LOOT_RARITY_COEFFICIENTS[rr_rarity_id_max] = {
     2.5, 4, 6, 15, 35, 50, 125, 150, 175};
 
+// Store original raw weights before processing (only store once, on first call)
+static double RR_HELL_CREEK_MOB_ID_RARITY_COEFFICIENTS_RAW[rr_mob_id_max];
+static double RR_GARDEN_MOB_ID_RARITY_COEFFICIENTS_RAW[rr_mob_id_max];
+static int raw_weights_stored = 0;
+
 static void init_game_coefficients()
 {
+    // Store original raw weights on first call only
+    if (!raw_weights_stored)
+    {
+        for (uint64_t mob = 0; mob < rr_mob_id_max; ++mob)
+        {
+            RR_HELL_CREEK_MOB_ID_RARITY_COEFFICIENTS_RAW[mob] = RR_HELL_CREEK_MOB_ID_RARITY_COEFFICIENTS[mob];
+            RR_GARDEN_MOB_ID_RARITY_COEFFICIENTS_RAW[mob] = RR_GARDEN_MOB_ID_RARITY_COEFFICIENTS[mob];
+        }
+        raw_weights_stored = 1;
+    }
+    
     double sum = 1;
     double sum2 = 1;
     for (uint64_t a = 1; a < rr_rarity_id_max; ++a)
@@ -259,6 +275,15 @@ static void init_game_coefficients()
             RR_MOB_WAVE_RARITY_COEFFICIENTS[a - 1];
     }
     RR_MOB_WAVE_RARITY_COEFFICIENTS[rr_rarity_id_ultimate + 1] = 1;
+    
+    // Restore original raw weights before processing
+    for (uint64_t mob = 0; mob < rr_mob_id_max; ++mob)
+    {
+        RR_HELL_CREEK_MOB_ID_RARITY_COEFFICIENTS[mob] = RR_HELL_CREEK_MOB_ID_RARITY_COEFFICIENTS_RAW[mob];
+        RR_GARDEN_MOB_ID_RARITY_COEFFICIENTS[mob] = RR_GARDEN_MOB_ID_RARITY_COEFFICIENTS_RAW[mob];
+    }
+    
+    // Now do cumulative addition
     for (uint64_t mob = 1; mob < rr_mob_id_max; ++mob)
     {
         RR_HELL_CREEK_MOB_ID_RARITY_COEFFICIENTS[mob] +=
@@ -266,12 +291,55 @@ static void init_game_coefficients()
         RR_GARDEN_MOB_ID_RARITY_COEFFICIENTS[mob] +=
             RR_GARDEN_MOB_ID_RARITY_COEFFICIENTS[mob - 1];
     }
-    for (uint64_t mob = 0; mob < rr_mob_id_max; ++mob)
+    // Find the last mob with non-zero weight (where cumulative value increases)
+    // This is the total sum of all weights, which we'll use for normalization
+    // After cumulative addition, zero-weight mobs have the same cumulative value as the previous mob
+    double hell_creek_total = 0.0;
+    double garden_total = 0.0;
+    
+    // Find the last mob where cumulative value increases (has non-zero weight)
+    // We need to find where the value actually increases, not just use the last element
+    for (int64_t mob = rr_mob_id_max - 1; mob > 0; --mob)
     {
-        RR_HELL_CREEK_MOB_ID_RARITY_COEFFICIENTS[mob] /=
-            RR_HELL_CREEK_MOB_ID_RARITY_COEFFICIENTS[rr_mob_id_max - 1];
-        RR_GARDEN_MOB_ID_RARITY_COEFFICIENTS[mob] /=
-            RR_GARDEN_MOB_ID_RARITY_COEFFICIENTS[rr_mob_id_max - 1];
+        if (hell_creek_total == 0.0 && 
+            RR_HELL_CREEK_MOB_ID_RARITY_COEFFICIENTS[mob] > RR_HELL_CREEK_MOB_ID_RARITY_COEFFICIENTS[mob - 1])
+        {
+            // This mob has non-zero weight (cumulative value increased)
+            hell_creek_total = RR_HELL_CREEK_MOB_ID_RARITY_COEFFICIENTS[mob];
+        }
+        if (garden_total == 0.0 && 
+            RR_GARDEN_MOB_ID_RARITY_COEFFICIENTS[mob] > RR_GARDEN_MOB_ID_RARITY_COEFFICIENTS[mob - 1])
+        {
+            garden_total = RR_GARDEN_MOB_ID_RARITY_COEFFICIENTS[mob];
+        }
+        if (hell_creek_total > 0.0 && garden_total > 0.0)
+            break;
+    }
+    // Handle mob 0 separately (first mob)
+    if (hell_creek_total == 0.0 && RR_HELL_CREEK_MOB_ID_RARITY_COEFFICIENTS[0] > 0.0)
+        hell_creek_total = RR_HELL_CREEK_MOB_ID_RARITY_COEFFICIENTS[0];
+    if (garden_total == 0.0 && RR_GARDEN_MOB_ID_RARITY_COEFFICIENTS[0] > 0.0)
+        garden_total = RR_GARDEN_MOB_ID_RARITY_COEFFICIENTS[0];
+    
+    // Normalize using the last non-zero cumulative value
+    // After normalization, zero-weight mobs will have the same value as the previous mob
+    if (hell_creek_total > 0.0)
+    {
+        printf("init_game_coefficients: hell_creek_total=%f, before norm: [11]=%f, [12]=%f, [19]=%f\n",
+               hell_creek_total, RR_HELL_CREEK_MOB_ID_RARITY_COEFFICIENTS[11],
+               RR_HELL_CREEK_MOB_ID_RARITY_COEFFICIENTS[12],
+               RR_HELL_CREEK_MOB_ID_RARITY_COEFFICIENTS[rr_mob_id_max - 1]);
+        for (uint64_t mob = 0; mob < rr_mob_id_max; ++mob)
+            RR_HELL_CREEK_MOB_ID_RARITY_COEFFICIENTS[mob] /= hell_creek_total;
+        printf("init_game_coefficients: after norm: [11]=%f, [12]=%f, [19]=%f\n",
+               RR_HELL_CREEK_MOB_ID_RARITY_COEFFICIENTS[11],
+               RR_HELL_CREEK_MOB_ID_RARITY_COEFFICIENTS[12],
+               RR_HELL_CREEK_MOB_ID_RARITY_COEFFICIENTS[rr_mob_id_max - 1]);
+    }
+    if (garden_total > 0.0)
+    {
+        for (uint64_t mob = 0; mob < rr_mob_id_max; ++mob)
+            RR_GARDEN_MOB_ID_RARITY_COEFFICIENTS[mob] /= garden_total;
     }
 }
 

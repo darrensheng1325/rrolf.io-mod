@@ -233,16 +233,16 @@ void rr_server_shared_tick(void)
                 size = rr_server_shared_get_client_message(message_buffer, sizeof(message_buffer));
                 continue;
             }
-            printf("<rr_server::shared_memory::message_received::size=%u::encoder_start=%p::encoder_end=%p::encoder_current=%p>\n",
-                   (unsigned)size,
-                   (void*)encoder.start,
-                   (void*)encoder.end,
-                   (void*)encoder.current);
+            // printf("<rr_server::shared_memory::message_received::size=%u::encoder_start=%p::encoder_end=%p::encoder_current=%p>\n",
+            //        (unsigned)size,
+            //        (void*)encoder.start,
+            //        (void*)encoder.end,
+            //        (void*)encoder.current);
             uint8_t header = proto_bug_read_uint8(&encoder, "header");
-            printf("<rr_server::shared_memory::header_read::header=0x%02x::encoder_current=%p::bytes_read=%llu>\n",
-                   (unsigned)header,
-                   (void*)encoder.current,
-                   (unsigned long long)(encoder.current - encoder.start));
+            // printf("<rr_server::shared_memory::header_read::header=0x%02x::encoder_current=%p::bytes_read=%llu>\n",
+            //        (unsigned)header,
+            //        (void*)encoder.current,
+            //        (unsigned long long)(encoder.current - encoder.start));
             
             server_handle_client_message(g_server, client, &encoder, header);
             
@@ -361,8 +361,8 @@ void rr_server_shared_send_message(uint8_t *data, uint32_t size)
     }
     
     g_shared_mem->server_to_client_write_pos = write_pos;
-    printf("<rr_server::shared_send::message_written::size=%u::write_pos=%u::read_pos=%u>\n", 
-           (unsigned)size, (unsigned)write_pos, (unsigned)read_pos);
+    // printf("<rr_server::shared_send::message_written::size=%u::write_pos=%u::read_pos=%u>\n", 
+    //        (unsigned)size, (unsigned)write_pos, (unsigned)read_pos);
 }
 
 uint32_t rr_client_shared_get_server_message(uint8_t *buffer, uint32_t max_size)
@@ -432,8 +432,8 @@ uint32_t rr_client_shared_get_server_message(uint8_t *buffer, uint32_t max_size)
     }
     
     g_shared_mem->server_to_client_read_pos = read_pos;
-    printf("<rr_client::shared_get::message_read::size=%u::read_pos=%u::write_pos=%u>\n", 
-           (unsigned)message_size, (unsigned)read_pos, (unsigned)write_pos);
+    // printf("<rr_client::shared_get::message_read::size=%u::read_pos=%u::write_pos=%u>\n", 
+    //        (unsigned)message_size, (unsigned)read_pos, (unsigned)write_pos);
     return message_size;
 }
 

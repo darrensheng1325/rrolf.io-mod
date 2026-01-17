@@ -111,7 +111,7 @@ void rr_server_client_write_message(struct rr_server_client *this,
     // In worker mode, use shared memory instead of message queue
     // No need to track message_length since we're not queuing messages
     extern void rr_server_shared_send_message(uint8_t *data, uint32_t size);
-    printf("<rr_server::client_write_message::calling_shared_send::size=%llu>\n", (unsigned long long)size);
+    // printf("<rr_server::client_write_message::calling_shared_send::size=%llu>\n", (unsigned long long)size);
     fflush(stdout);
     rr_server_shared_send_message(data, (uint32_t)size);
     printf("<rr_server::client_write_message::shared_send_returned>\n");

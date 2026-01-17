@@ -17,6 +17,7 @@
 
 #include <math.h>
 #include <stdlib.h>
+#include <assert.h>
 
 #include <Server/Simulation.h>
 #include <Shared/StaticData.h>
@@ -40,35 +41,49 @@ uint32_t get_spawn_rarity(float difficulty)
 
 uint8_t get_spawn_id(uint8_t biome, struct rr_maze_grid *zone)
 {
-    // Use explicit biome enum comparison instead of == 0
-    double *table = (biome == rr_biome_id_hell_creek) ? RR_HELL_CREEK_MOB_ID_RARITY_COEFFICIENTS
-                                                      : RR_GARDEN_MOB_ID_RARITY_COEFFICIENTS;
+    // Default to Hell Creek coefficients, only use Garden for explicit garden biome
+    double *table = (biome == rr_biome_id_garden) ? RR_GARDEN_MOB_ID_RARITY_COEFFICIENTS
+                                                  : RR_HELL_CREEK_MOB_ID_RARITY_COEFFICIENTS;
     
-    // Calculate total weight sum
-    double total_weight = 0.0;
-    for (uint8_t i = 0; i < rr_mob_id_max; ++i)
+    // The table contains cumulative probabilities (normalized to [0, 1])
+    // after init_game_coefficients() processes them.
+    // Generate a random value between 0 and 1
+    double random_value = rr_frand();
+    
+    // Debug: Show coefficient values and selection (first 20 spawns only)
+    static int debug_count = 0;
+    if (debug_count++ < 20)
     {
-        total_weight += table[i];
+        printf("get_spawn_id[%d]: biome=%u, random=%.6f, table[1]=%.6f, table[4]=%.6f, table[11]=%.6f, table[12]=%.6f, table[19]=%.6f\n",
+               debug_count - 1, biome, random_value, 
+               table[1], table[4], table[11], table[12], table[19]);
     }
     
-    // If no weights, return first mob (shouldn't happen)
-    if (total_weight <= 0.0)
-        return 0;
-    
-    // Generate random value between 0 and total_weight
-    double random_value = rr_frand() * total_weight;
-    
-    // Select mob based on weighted random
-    double cumulative = 0.0;
+    // Find the first mob where cumulative probability >= random_value
+    // Skip mobs with zero weight (they have the same cumulative probability as the previous mob)
+    double prev_cumulative = -1.0;
     for (uint8_t id = 0; id < rr_mob_id_max; ++id)
     {
-        cumulative += table[id];
-        if (random_value <= cumulative)
+        // Skip mobs with zero weight (cumulative probability equals previous)
+        if (table[id] > prev_cumulative && random_value <= table[id])
+        {
+            if (debug_count <= 20)
+                printf("  -> Selected mob_id=%u (%s), prev_cum=%.6f, table[%u]=%.6f\n",
+                       id, RR_MOB_NAMES[id], prev_cumulative, id, table[id]);
+            return id;
+        }
+        prev_cumulative = table[id];
+    }
+    
+    // Fallback: find the last mob with non-zero weight
+    for (int8_t id = rr_mob_id_max - 1; id >= 0; --id)
+    {
+        if (id == 0 || table[id] > table[id - 1])
             return id;
     }
     
-    // Fallback (shouldn't reach here)
-    return rr_mob_id_max - 1;
+    // Final fallback: return first mob (shouldn't reach here if coefficients are correct)
+    return 0;
 }
 
 int should_spawn_at(uint8_t id, uint8_t rarity)

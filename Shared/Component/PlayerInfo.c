@@ -142,23 +142,23 @@ void rr_component_player_info_write(struct rr_component_player_info *this,
         state &= ~(state_flags_petals | state_flags_petals_collected);
     proto_bug_write_varuint(encoder, state, "player_info component state");
     uint64_t encoder_pos_before = encoder->current - encoder->start;
-    printf("<rr_server::player_info_write::state=0x%llx::flower_id_bit=%llu::camera_x_bit=%llu::camera_y_bit=%llu::camera_fov_bit=%llu::encoder_pos_before=%llu>\n",
-           (unsigned long long)state,
-           (unsigned long long)(state & state_flags_flower_id),
-           (unsigned long long)(state & state_flags_camera_x),
-           (unsigned long long)(state & state_flags_camera_y),
-           (unsigned long long)(state & state_flags_camera_fov),
-           (unsigned long long)encoder_pos_before);
+    // printf("<rr_server::player_info_write::state=0x%llx::flower_id_bit=%llu::camera_x_bit=%llu::camera_y_bit=%llu::camera_fov_bit=%llu::encoder_pos_before=%llu>\n",
+    //        (unsigned long long)state,
+    //        (unsigned long long)(state & state_flags_flower_id),
+    //        (unsigned long long)(state & state_flags_camera_x),
+    //        (unsigned long long)(state & state_flags_camera_y),
+    //        (unsigned long long)(state & state_flags_camera_fov),
+    //        (unsigned long long)encoder_pos_before);
 #define X(NAME, TYPE) RR_ENCODE_PUBLIC_FIELD(NAME, TYPE);
     FOR_EACH_PUBLIC_FIELD
 #undef X
     uint64_t encoder_pos_after = encoder->current - encoder->start;
-    printf("<rr_server::player_info_write::encoder_pos_after=%llu::bytes_written=%llu::flower_id=%u::camera_x=%f::camera_y=%f>\n",
-           (unsigned long long)encoder_pos_after,
-           (unsigned long long)(encoder_pos_after - encoder_pos_before),
-           (unsigned)this->flower_id,
-           this->camera_x,
-           this->camera_y);
+    // printf("<rr_server::player_info_write::encoder_pos_after=%llu::bytes_written=%llu::flower_id=%u::camera_x=%f::camera_y=%f>\n",
+    //        (unsigned long long)encoder_pos_after,
+    //        (unsigned long long)(encoder_pos_after - encoder_pos_before),
+    //        (unsigned)this->flower_id,
+    //        this->camera_x,
+    //        this->camera_y);
     if (state & state_flags_petals)
     {
         for (uint32_t i = 0; i < this->slot_count; ++i)

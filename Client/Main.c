@@ -63,6 +63,12 @@ static void *rr_create_game_thread(void *arg)
 void rr_key_event(struct rr_game *this, uint8_t type, uint32_t which,
                   uint32_t key)
 {
+    // Debug Space and Shift keys
+    if (which == 32 || which == 16 || which == 160 || which == 161)
+    {
+        printf("<rr_client::key_event::type=%u::which=%u::key=%u>\n",
+               (unsigned)type, (unsigned)which, (unsigned)key);
+    }
     if (type == 1)
     {
         rr_bitset_set(this->input_data->keys_pressed, which);
@@ -137,8 +143,19 @@ void rr_main_loop(struct rr_game *this)
                 new Array(256).fill(0).map(function(_, i) { return i; });
             window.onkeydown = function(e)
             {
-                // Use keyCode as fallback since which is deprecated
-                const keyCode = e.which || e.keyCode || 0;
+                // Use keyCode/which for compatibility, but prefer keyCode
+                // Space = 32, Shift = 16 (left) or 16/160/161 (various shift keys)
+                let keyCode = e.keyCode || e.which || 0;
+                // Handle modern key property for special keys
+                if (e.key === ' ' || e.code === 'Space') keyCode = 32;
+                else if (e.key === 'Shift' || e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
+                    // Use the actual keyCode if available, otherwise default to 16
+                    if (!keyCode) keyCode = 16;
+                }
+                // Debug Space and Shift keys
+                if (keyCode === 32 || keyCode === 16 || keyCode === 160 || keyCode === 161) {
+                    console.log('Key down:', e.key, e.code, 'keyCode:', keyCode);
+                }
                 _rr_key_event(
                     $0, 1, keyCode,
                     e.key ? (!e.ctrlKey && !e.metaKey && e.key.length == 1) *
@@ -147,8 +164,14 @@ void rr_main_loop(struct rr_game *this)
             };
             window.onkeyup = function(e)
             {
-                // Use keyCode as fallback since which is deprecated
-                const keyCode = e.which || e.keyCode || 0;
+                // Use keyCode/which for compatibility, but prefer keyCode
+                let keyCode = e.keyCode || e.which || 0;
+                // Handle modern key property for special keys
+                if (e.key === ' ' || e.code === 'Space') keyCode = 32;
+                else if (e.key === 'Shift' || e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
+                    // Use the actual keyCode if available, otherwise default to 16
+                    if (!keyCode) keyCode = 16;
+                }
                 _rr_key_event(
                     $0, 0, keyCode,
                     e.key ? (!e.ctrlKey && !e.metaKey && e.key.length == 1) *

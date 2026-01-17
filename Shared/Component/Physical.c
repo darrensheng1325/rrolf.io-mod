@@ -64,10 +64,10 @@ void rr_component_physical_write(struct rr_component_physical *this,
     // Debug: log what we're writing
     if (state & state_flags_x || state & state_flags_y)
     {
-        printf("<rr_server::physical_write::state=0x%llx::x=%f::y=%f::encoder_before=%llu::encoder_after_state=%llu>\n",
-               (unsigned long long)state, this->x, this->y,
-               (unsigned long long)encoder_pos_before,
-               (unsigned long long)encoder_pos_after_state);
+        // printf("<rr_server::physical_write::state=0x%llx::x=%f::y=%f::encoder_before=%llu::encoder_after_state=%llu>\n",
+        //        (unsigned long long)state, this->x, this->y,
+        //        (unsigned long long)encoder_pos_before,
+        //        (unsigned long long)encoder_pos_after_state);
     }
 #define X(NAME, TYPE) RR_ENCODE_PUBLIC_FIELD(NAME, TYPE);
     FOR_EACH_PUBLIC_FIELD
@@ -75,8 +75,8 @@ void rr_component_physical_write(struct rr_component_physical *this,
     uint64_t encoder_pos_after = encoder->current - encoder->start;
     if (state & state_flags_x || state & state_flags_y)
     {
-        printf("<rr_server::physical_write::complete::bytes_written=%llu>\n",
-               (unsigned long long)(encoder_pos_after - encoder_pos_before));
+        // printf("<rr_server::physical_write::complete::bytes_written=%llu>\n",
+        //        (unsigned long long)(encoder_pos_after - encoder_pos_before));
     }
 }
 
@@ -100,12 +100,12 @@ void rr_component_physical_read(struct rr_component_physical *this,
     // Debug: log what we're reading
     if (state & state_flags_x || state & state_flags_y)
     {
-        printf("<rr_client::physical_read::state=0x%llx::encoder_before=%llu::encoder_after_state=%llu::state_bytes=%llu::x_before=%f::y_before=%f>\n",
-               (unsigned long long)state,
-               (unsigned long long)encoder_pos_before,
-               (unsigned long long)encoder_pos_after_state,
-               (unsigned long long)(encoder_pos_after_state - encoder_pos_before),
-               x_before, y_before);
+        // printf("<rr_client::physical_read::state=0x%llx::encoder_before=%llu::encoder_after_state=%llu::state_bytes=%llu::x_before=%f::y_before=%f>\n",
+        //        (unsigned long long)state,
+        //        (unsigned long long)encoder_pos_before,
+        //        (unsigned long long)encoder_pos_after_state,
+        //        (unsigned long long)(encoder_pos_after_state - encoder_pos_before),
+        //        x_before, y_before);
     }
 #define X(NAME, TYPE) RR_DECODE_PUBLIC_FIELD(NAME, TYPE);
     FOR_EACH_PUBLIC_FIELD
@@ -114,9 +114,9 @@ void rr_component_physical_read(struct rr_component_physical *this,
     uint64_t encoder_pos_after = encoder->current - encoder->start;
     if (state & state_flags_x || state & state_flags_y)
     {
-        printf("<rr_client::physical_read::complete::x_before=%f::x_after=%f::y_before=%f::y_after=%f::bytes_read=%llu>\n",
-               x_before, this->x, y_before, this->y,
-               (unsigned long long)(encoder_pos_after - encoder_pos_before));
+        // printf("<rr_client::physical_read::complete::x_before=%f::x_after=%f::y_before=%f::y_after=%f::bytes_read=%llu>\n",
+        //        x_before, this->x, y_before, this->y,
+        //        (unsigned long long)(encoder_pos_after - encoder_pos_before));
         // Check if position was set to 0 when it shouldn't be
         if ((state & state_flags_x) && this->x == 0 && x_before != 0)
         {

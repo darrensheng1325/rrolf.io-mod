@@ -64,11 +64,11 @@ static void rr_simulation_write_entity_function(uint64_t _id, void *_captures)
     uint64_t encoder_pos_after_component_flags = encoder->current - encoder->start;
     if (component_flags & (1 << 3) || component_flags & (1 << 1)) // physical or player_info
     {
-        printf("<rr_server::write_entity::id=%u::is_creation=%u::component_flags=0x%x::encoder_before_flags=%llu::encoder_after_flags=%llu::flags_bytes=%llu>\n",
-               (unsigned)id, (unsigned)is_creation, (unsigned)component_flags,
-               (unsigned long long)encoder_pos_before_component_flags,
-               (unsigned long long)encoder_pos_after_component_flags,
-               (unsigned long long)(encoder_pos_after_component_flags - encoder_pos_before_component_flags));
+        // printf("<rr_server::write_entity::id=%u::is_creation=%u::component_flags=0x%x::encoder_before_flags=%llu::encoder_after_flags=%llu::flags_bytes=%llu>\n",
+        //        (unsigned)id, (unsigned)is_creation, (unsigned)component_flags,
+        //        (unsigned long long)encoder_pos_before_component_flags,
+        //        (unsigned long long)encoder_pos_after_component_flags,
+        //        (unsigned long long)(encoder_pos_after_component_flags - encoder_pos_before_component_flags));
     }
 #define XX(COMPONENT, ID)                                                      \
     if (component_flags & (1 << ID))                                           \

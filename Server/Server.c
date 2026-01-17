@@ -881,13 +881,13 @@ void server_handle_client_message(struct rr_server *this, struct rr_server_clien
 {
     uint64_t encoder_pos_before = encoder->current - encoder->start;
     uint64_t encoder_bound = encoder->end - encoder->start;
-    printf("<rr_server::handle_client_message::header=0x%02x::encoder_pos=%llu::encoder_bound=%llu::encoder_start=%p::encoder_current=%p::encoder_end=%p>\n",
-           (unsigned)header,
-           (unsigned long long)encoder_pos_before,
-           (unsigned long long)encoder_bound,
-           (void*)encoder->start,
-           (void*)encoder->current,
-           (void*)encoder->end);
+    // printf("<rr_server::handle_client_message::header=0x%02x::encoder_pos=%llu::encoder_bound=%llu::encoder_start=%p::encoder_current=%p::encoder_end=%p>\n",
+    //        (unsigned)header,
+    //        (unsigned long long)encoder_pos_before,
+    //        (unsigned long long)encoder_bound,
+    //        (void*)encoder->start,
+    //        (void*)encoder->current,
+    //        (void*)encoder->end);
     switch (header)
     {
     case rr_serverbound_input:
@@ -908,18 +908,20 @@ void server_handle_client_message(struct rr_server *this, struct rr_server_clien
                 20 * proto_bug_read_float32(encoder, "speed_percent");
         uint64_t pos_after_speed = encoder->current - encoder->start;
         if (client->dev)
-            printf("<rr_server::read_speed_percent::before=%llu::after=%llu::value=%f>\n",
-                   (unsigned long long)pos_before_speed,
-                   (unsigned long long)pos_after_speed,
-                   client->speed_percent);
+        {
+            // printf("<rr_server::read_speed_percent::before=%llu::after=%llu::value=%f>\n",
+            //        (unsigned long long)pos_before_speed,
+            //        (unsigned long long)pos_after_speed,
+            //        client->speed_percent);
+        }
         uint64_t pos_before_flags = encoder->current - encoder->start;
         uint8_t movementFlags =
             proto_bug_read_uint8(encoder, "movement kb flags");
         uint64_t pos_after_flags = encoder->current - encoder->start;
-        printf("<rr_server::read_movement_flags::before=%llu::after=%llu::flags=0x%02x>\n",
-               (unsigned long long)pos_before_flags,
-               (unsigned long long)pos_after_flags,
-               (unsigned)movementFlags);
+        // printf("<rr_server::read_movement_flags::before=%llu::after=%llu::flags=0x%02x>\n",
+        //        (unsigned long long)pos_before_flags,
+        //        (unsigned long long)pos_after_flags,
+        //        (unsigned)movementFlags);
         float x = 0;
         float y = 0;
 
@@ -969,9 +971,10 @@ void server_handle_client_message(struct rr_server *this, struct rr_server_clien
 
         client->player_info->input = (movementFlags >> 4) & 3;
         uint64_t encoder_pos_after = encoder->current - encoder->start;
-        printf("<rr_server::handle_input_complete::encoder_pos_after=%llu::bytes_read=%llu>\n",
-               (unsigned long long)encoder_pos_after,
-               (unsigned long long)(encoder_pos_after - encoder_pos_before));
+        // printf("<rr_server::handle_input_complete::encoder_pos_after=%llu::bytes_read=%llu::movementFlags=0x%02x::input=0x%02x>\n",
+        //        (unsigned long long)encoder_pos_after,
+        //        (unsigned long long)(encoder_pos_after - encoder_pos_before),
+        //        (unsigned)movementFlags, (unsigned)client->player_info->input);
         break;
     }
     case rr_serverbound_petal_switch:

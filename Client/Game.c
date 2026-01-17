@@ -644,10 +644,10 @@ void rr_game_websocket_on_event_function(enum rr_websocket_event_type type,
                    (unsigned long long)size);
         }
         uint8_t h = proto_bug_read_uint8(&encoder, "header");
-        printf("<rr_client::received_message::header=0x%02x::size=%llu>\n", h, (unsigned long long)size);
+        // printf("<rr_client::received_message::header=0x%02x::size=%llu>\n", h, (unsigned long long)size);
         if (h == rr_clientbound_update)
         {
-            printf("<rr_client::received_update_message::processing>\n");
+            // printf("<rr_client::received_update_message::processing>\n");
         }
         switch (h)
         {
@@ -964,14 +964,33 @@ static void write_serverbound_packet_desktop(struct rr_game *this)
     movement_flags |= (rr_bitset_get(this->input_data->keys_pressed, 'D') ||
                        rr_bitset_get(this->input_data->keys_pressed, 39))
                       << 3;
-    movement_flags |= this->input_data->mouse_buttons << 4;
+    // Bits 4-5: petal extend/retract
     // Space key (32) extends petals (bit 4)
     // Shift keys (16 = left shift, 160 = left shift, 161 = right shift) retract petals (bit 5)
-    movement_flags |= rr_bitset_get(this->input_data->keys_pressed, 32) << 4; // Space
-    if (rr_bitset_get(this->input_data->keys_pressed, 16) ||  // Left Shift
-        rr_bitset_get(this->input_data->keys_pressed, 160) || // Left Shift (alternative)
-        rr_bitset_get(this->input_data->keys_pressed, 161))   // Right Shift
+    // Mouse buttons can also trigger extend/retract (left button = extend, right button = retract)
+    // Keyboard takes precedence over mouse buttons
+    uint8_t space_pressed = rr_bitset_get(this->input_data->keys_pressed, 32);
+    uint8_t shift_pressed = rr_bitset_get(this->input_data->keys_pressed, 16) ||
+                            rr_bitset_get(this->input_data->keys_pressed, 160) ||
+                            rr_bitset_get(this->input_data->keys_pressed, 161);
+    
+    if (space_pressed)
+        movement_flags |= 1 << 4; // Extend
+    else
+        movement_flags |= (this->input_data->mouse_buttons & 1) << 4; // Left mouse button = extend
+    
+    if (shift_pressed)
         movement_flags |= 1 << 5; // Retract
+    else
+        movement_flags |= ((this->input_data->mouse_buttons >> 1) & 1) << 5; // Right mouse button = retract
+    
+    // Debug output
+    if (space_pressed || shift_pressed)
+    {
+        printf("<rr_client::petal_input::space=%u::shift=%u::movement_flags=0x%02x::mouse_buttons=0x%02x>\n",
+               (unsigned)space_pressed, (unsigned)shift_pressed,
+               (unsigned)movement_flags, (unsigned)this->input_data->mouse_buttons);
+    }
     movement_flags |= this->cache.use_mouse << 6;
 
     if (this->is_dev)
